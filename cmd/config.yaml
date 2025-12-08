@@ -1,0 +1,42 @@
+server:
+    port: "8080"
+youtube:
+  api_key: "AIzaSyAEQ88G9H-DJKL5fEAhPm7Ev5czCLa8i44" # Required: Your YouTube Data API v3 key
+
+tiktok:
+  api_key: "sbawggp68sw26gl2hv"    # Required: Your TikTok Open API key
+  api_secret: "7bntUCnbK1NxG0LGfR6dWXfO6Urj9puV" # Required: Your TikTok Open API secret
+  region: "VN"   # TikTok region (JP for Japan)
+  base_url: "https://open.tiktokapis.com" # Override with https://open.tiktokapis.com for the new Open Platform
+  upload_init_path: "/v2/post/publish/inbox/video/init/"      # Override to match the API version you're targeting
+  publish_path: "/v2/post/publish/status/fetch/"
+cron:
+    schedule: '*/5 * * * *'
+download:
+    dir: ./downloads
+    max_concurrent: 5
+    timeout: 10m0s
+    buffer_size: 1048576
+    yt_dlp_path: 'C:\Users\tvttt\AppData\Roaming\Python\Python314\Scripts\yt-dlp.exe'  # Optional: point to yt-dlp binary if it's not in PATH
+upload:
+    max_concurrent: 3
+    timeout: 15m0s
+    buffer_size: 1048576
+database:
+    url: sqlite3:./data.db
+performance:
+    worker_pool_size: 32
+    http_client_timeout: 30s
+    max_idle_conns: 200
+    max_conns_per_host: 50
+    max_concurrent_io: 8
+logging:
+    dir: ./logs
+    output_file: app.log
+    error_file: app.error.log
+
+accounts:
+  - youtube_channel_id: "UCo9-zvcJyMhTEtgpSIk-L7g"
+    tiktok_account_id: "7580560736729088017"
+    tiktok_access_token: "act.3ryY02hQaTn29C5xDwfYGR05woKhmSYs7H4lGVAKOh9k7CZgairF9ADN8spu!6514.va"
+    is_active: true

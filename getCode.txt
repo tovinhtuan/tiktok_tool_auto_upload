@@ -1,0 +1,9 @@
+https://www.tiktok.com/v2/auth/authorize/?client_key=
+sbawggp68sw26gl2hv&scope=user.info.basic&response_type=code&redirect_uri=https%3A%2F%2Ftovinhtuan.github.io%2Ftiktok-policy%2Fcallback&state=12345
+
+
+https://www.tiktok.com/v2/auth/authorize/?client_key=sbawggp68sw26gl2hv&scope=user.info.basic&response_type=code&redirect_uri=https%3A%2F%2Ftovinhtuan.github.io%2Ftiktok-policy%2Fcallback&state=12345
+
+
+https://tovinhtuan.github.io/tiktok-policy/callback?code=iEbKuoSTloaey5kAGIN3uSyzUyMo1xf4hQbZHbGRPsfZJRaNGa2CeGozgCGuS6sU910eg7rcANq132z4HNjr2-nVWcd-wRlys51zAyswgbN7o0flI_JD3ZCvNZhLMnw5CigauipsyLYbdwXHtzOuw0WpcyHEH85I5wlG15EFdrXZw5Jp3EGk6GRvcPJ6ErS1oAtI8pPbMqyuCNdfsBuNuw%2A1%216470.va&scopes=user.info.basic&state=12345
+
