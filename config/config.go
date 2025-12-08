@@ -25,6 +25,7 @@ type Config struct {
 	TikTokBaseURL        string `yaml:"tiktok.base_url"`
 	TikTokUploadInitPath string `yaml:"tiktok.upload_init_path"`
 	TikTokPublishPath    string `yaml:"tiktok.publish_path"`
+	TikTokRedirectURI    string `yaml:"tiktok.redirect_uri"` // OAuth redirect URI
 
 	// Cron schedule configuration
 	CronSchedule string `yaml:"cron.schedule"`
@@ -88,6 +89,7 @@ type configFile struct {
 		BaseURL        string `yaml:"base_url"`
 		UploadInitPath string `yaml:"upload_init_path"`
 		PublishPath    string `yaml:"publish_path"`
+		RedirectURI    string `yaml:"redirect_uri"`
 	} `yaml:"tiktok"`
 	Cron struct {
 		Schedule string `yaml:"schedule"`
@@ -175,6 +177,7 @@ func (m *Manager) Load() (*Config, error) {
 		TikTokBaseURL:          cfgFile.TikTok.BaseURL,
 		TikTokUploadInitPath:   cfgFile.TikTok.UploadInitPath,
 		TikTokPublishPath:      cfgFile.TikTok.PublishPath,
+		TikTokRedirectURI:      cfgFile.TikTok.RedirectURI,
 		CronSchedule:           cfgFile.Cron.Schedule,
 		DownloadDir:            cfgFile.Download.Dir,
 		MaxConcurrentDownloads: cfgFile.Download.MaxConcurrent,
@@ -222,6 +225,13 @@ func (m *Manager) Load() (*Config, error) {
 	}
 	if cfg.TikTokPublishPath == "" {
 		cfg.TikTokPublishPath = "/video/publish/"
+	}
+	if cfg.TikTokRedirectURI == "" {
+		// Default to localhost callback, but can be overridden in config
+		cfg.TikTokRedirectURI = fmt.Sprintf("http://localhost:%s/api/tiktok/callback", cfg.ServerPort)
+		if cfg.ServerPort == "" {
+			cfg.TikTokRedirectURI = "http://localhost:8080/api/tiktok/callback"
+		}
 	}
 	if cfg.CronSchedule == "" {
 		cfg.CronSchedule = "*/5 * * * *"
@@ -334,6 +344,7 @@ func (m *Manager) saveUnlocked(cfg *Config) error {
 			BaseURL        string `yaml:"base_url"`
 			UploadInitPath string `yaml:"upload_init_path"`
 			PublishPath    string `yaml:"publish_path"`
+			RedirectURI    string `yaml:"redirect_uri"`
 		}{
 			APIKey:         cfg.TikTokAPIKey,
 			APISecret:      cfg.TikTokAPISecret,
@@ -341,6 +352,7 @@ func (m *Manager) saveUnlocked(cfg *Config) error {
 			BaseURL:        cfg.TikTokBaseURL,
 			UploadInitPath: cfg.TikTokUploadInitPath,
 			PublishPath:    cfg.TikTokPublishPath,
+			RedirectURI:    cfg.TikTokRedirectURI,
 		},
 		Cron: struct {
 			Schedule string `yaml:"schedule"`

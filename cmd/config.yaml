@@ -10,6 +10,7 @@ tiktok:
   base_url: "https://open.tiktokapis.com" # Override with https://open.tiktokapis.com for the new Open Platform
   upload_init_path: "/v2/post/publish/inbox/video/init/"      # Override to match the API version you're targeting
   publish_path: "/v2/post/publish/status/fetch/"
+  redirect_uri: "https://tovinhtuan.github.io/tiktok-policy/callback" # OAuth redirect URI (must match TikTok app settings)
 cron:
     schedule: '*/5 * * * *'
 download:
@@ -38,5 +39,5 @@ logging:
 accounts:
   - youtube_channel_id: "UCo9-zvcJyMhTEtgpSIk-L7g"
     tiktok_account_id: "7580560736729088017"
-    tiktok_access_token: "act.3ryY02hQaTn29C5xDwfYGR05woKhmSYs7H4lGVAKOh9k7CZgairF9ADN8spu!6514.va"
+    #tiktok_access_token: "act.3ryY02hQaTn29C5xDwfYGR05woKhmSYs7H4lGVAKOh9k7CZgairF9ADN8spu!6514.va"
     is_active: true

@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"sync"
 	"time"
 
@@ -204,7 +205,8 @@ func (p *VideoProcessor) uploadVideo(ctx context.Context, video *domain.Video) e
 		return fmt.Errorf("TikTok account ID not configured for account %s", account.ID)
 	}
 	if account.TikTokAccessToken == "" {
-		return fmt.Errorf("TikTok access token not configured for account %s", account.ID)
+		authorizeURL := p.promptManualAuthorization(account.ID)
+		return fmt.Errorf("TikTok access token not configured for account %s. Re-authorize via %s and exchange the returned code for a token", account.ID, authorizeURL)
 	}
 
 	// Validate and refresh access token if needed
@@ -216,7 +218,7 @@ func (p *VideoProcessor) uploadVideo(ctx context.Context, video *domain.Video) e
 	}
 	if !isValid {
 		logger.Info().Printf("Access token is invalid or expired for account %s, attempting to refresh", account.ID)
-		
+
 		// Try to refresh token if refresh token is available
 		if account.TikTokRefreshToken != "" {
 			logger.Info().Printf("Attempting to refresh access token for account %s", account.ID)
@@ -225,7 +227,7 @@ func (p *VideoProcessor) uploadVideo(ctx context.Context, video *domain.Video) e
 				logger.Error().Printf("Failed to refresh access token for account %s: %v", account.ID, err)
 				return fmt.Errorf("TikTok access token is invalid and refresh failed for account %s: %w. Please update the token", account.ID, err)
 			}
-			
+
 			// Update account with new tokens
 			account.TikTokAccessToken = tokenResp.Data.AccessToken
 			if tokenResp.Data.RefreshToken != "" {
@@ -235,19 +237,18 @@ func (p *VideoProcessor) uploadVideo(ctx context.Context, video *domain.Video) e
 				expiresAt := time.Now().Add(time.Duration(tokenResp.Data.ExpiresIn) * time.Second)
 				account.TikTokTokenExpiresAt = &expiresAt
 			}
-			
+
 			// Save updated account
 			if err := p.accountRepo.Save(account); err != nil {
 				logger.Error().Printf("Failed to save refreshed token for account %s: %v", account.ID, err)
 				return fmt.Errorf("failed to save refreshed token: %w", err)
 			}
-			
+
 			logger.Info().Printf("Successfully refreshed access token for account %s", account.ID)
 		} else {
 			logger.Error().Printf("Access token is invalid or expired for account %s and no refresh token available", account.ID)
-			logger.Error().Printf("To fix this, use the exchange-code API endpoint to get a new token with refresh token:")
-			logger.Error().Printf("  POST /api/tiktok/exchange-code with: code, redirect_uri, account_id=%s", account.ID)
-			return fmt.Errorf("TikTok access token is invalid or expired for account %s and no refresh token available. Please use /api/tiktok/exchange-code endpoint to update the token with refresh token", account.ID)
+			authorizeURL := p.promptManualAuthorization(account.ID)
+			return fmt.Errorf("TikTok access token is invalid or expired for account %s and no refresh token available. Re-authorize via %s and exchange the returned code for a new token", account.ID, authorizeURL)
 		}
 	}
 	logger.Info().Printf("Access token validated successfully for account %s", account.ID)
@@ -288,4 +289,23 @@ func (p *VideoProcessor) uploadVideo(ctx context.Context, video *domain.Video) e
 	logger.Info().Printf("Upload completed for video %s -> TikTok video %s", video.YouTubeVideoID, tiktokVideoID)
 
 	return nil
+}
+
+// promptManualAuthorization logs instructions for manually re-authorizing a TikTok account and returns the authorize URL.
+func (p *VideoProcessor) promptManualAuthorization(accountID string) string {
+	scopes := "user.info.basic,video.upload,video.publish"
+	state := "12345"
+	authorizeURL := fmt.Sprintf(
+		"https://www.tiktok.com/v2/auth/authorize?client_key=%s&scope=%s&response_type=code&redirect_uri=%s&state=%s",
+		url.QueryEscape(p.config.TikTokAPIKey),
+		url.QueryEscape(scopes),
+		url.QueryEscape(p.config.TikTokRedirectURI),
+		url.QueryEscape(state),
+	)
+
+	logger.Error().Printf("To re-authorize TikTok account %s open: %s", accountID, authorizeURL)
+	logger.Error().Printf("After login TikTok will redirect to %s with ?code=NEW_CODE", p.config.TikTokRedirectURI)
+	logger.Error().Printf("Call https://open.tiktokapis.com/v2/oauth/token/ (or POST /api/tiktok/exchange-code) with client_key, client_secret, redirect_uri=%s and code=NEW_CODE to store the new access/refresh tokens", p.config.TikTokRedirectURI)
+
+	return authorizeURL
 }

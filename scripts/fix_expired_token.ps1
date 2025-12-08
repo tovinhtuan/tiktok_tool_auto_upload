@@ -28,14 +28,40 @@ Write-Host "   $authUrl" -ForegroundColor Green
 Write-Host ""
 Write-Host "2. Authorize the application" -ForegroundColor White
 Write-Host "3. After authorization, you will be redirected to a callback URL" -ForegroundColor White
-Write-Host "4. Copy the 'code' parameter from the callback URL" -ForegroundColor White
+Write-Host "4. Copy the entire callback URL (script will extract the 'code' parameter automatically)" -ForegroundColor White
 Write-Host ""
 Write-Host "Example callback URL:" -ForegroundColor Gray
 Write-Host "   https://tovinhtuan.github.io/tiktok-policy/callback?code=YOUR_CODE_HERE&scopes=...&state=12345" -ForegroundColor Gray
 Write-Host ""
 
-# Step 2: Get code from user
-$code = Read-Host "Enter the authorization code from the callback URL"
+# Helper to extract code from callback URL or raw input
+function Get-AuthorizationCodeFromInput {
+    param([string]$input)
+
+    if ([string]::IsNullOrWhiteSpace($input)) {
+        return ""
+    }
+
+    # If user pasted full callback URL, parse query string for code parameter
+    if ($input.Trim().StartsWith("http", [System.StringComparison]::OrdinalIgnoreCase)) {
+        try {
+            $uri = [System.Uri]$input.Trim()
+            $queryParams = [System.Web.HttpUtility]::ParseQueryString($uri.Query)
+            $codeFromUrl = $queryParams["code"]
+            if (-not [string]::IsNullOrWhiteSpace($codeFromUrl)) {
+                return $codeFromUrl
+            }
+        } catch {
+            Write-Host "Warning: Failed to parse callback URL, falling back to raw input." -ForegroundColor Yellow
+        }
+    }
+
+    return $input.Trim()
+}
+
+# Step 2: Get code from user or parse from callback URL
+$callbackOrCode = Read-Host "Paste the full callback URL (or just the authorization code)"
+$code = Get-AuthorizationCodeFromInput -input $callbackOrCode
 
 if ([string]::IsNullOrEmpty($code)) {
     Write-Host "Error: Authorization code is required" -ForegroundColor Red
@@ -44,6 +70,9 @@ if ([string]::IsNullOrEmpty($code)) {
 
 Write-Host ""
 Write-Host "Step 2: Exchanging code for token..." -ForegroundColor Yellow
+Write-Host "Using code: $code" -ForegroundColor Gray
+Write-Host ""
+Write-Host "Reminder: This code will be sent in the 'code' field when calling https://open.tiktokapis.com/v2/oauth/token/ (handled automatically via /api/tiktok/exchange-code)." -ForegroundColor DarkGray
 
 # Step 3: Exchange code for token
 $body = @{

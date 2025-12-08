@@ -27,7 +27,7 @@ Script sẽ hướng dẫn bạn từng bước.
    https://tovinhtuan.github.io/tiktok-policy/callback?code=YOUR_CODE_HERE&scopes=user.info.basic,video.upload&state=12345
    ```
 
-4. Copy phần `code` từ URL (sau `code=`)
+4. Copy toàn bộ URL callback (script sẽ tự trích `code` từ query string)
 
 ### Bước 2: Exchange Code để lấy Token
 

@@ -412,7 +412,20 @@ func (s *Server) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Build authorization URL
-	redirectURI := fmt.Sprintf("http://localhost:%s/api/tiktok/callback?account_id=%s", s.cfg.ServerPort, accountID)
+	// Use redirect URI from config, or default to localhost callback
+	redirectURI := s.cfg.TikTokRedirectURI
+	if redirectURI == "" {
+		redirectURI = fmt.Sprintf("http://localhost:%s/api/tiktok/callback", s.cfg.ServerPort)
+	}
+	// Append account_id to redirect URI if it's localhost callback
+	if strings.Contains(redirectURI, "localhost") && strings.Contains(redirectURI, "/api/tiktok/callback") {
+		redirectURI = fmt.Sprintf("%s?account_id=%s", redirectURI, accountID)
+	} else {
+		// For external redirect URIs, we need to handle callback differently
+		// Store account_id in state parameter
+		redirectURI = fmt.Sprintf("%s?account_id=%s", redirectURI, accountID)
+	}
+	
 	authURL := fmt.Sprintf(
 		"https://www.tiktok.com/v2/auth/authorize/?client_key=%s&scope=user.info.basic,video.upload&response_type=code&redirect_uri=%s&state=%s",
 		s.cfg.TikTokAPIKey,
@@ -434,7 +447,13 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 	// Get code and account_id from query parameters
 	code := r.URL.Query().Get("code")
 	accountID := r.URL.Query().Get("account_id")
+	state := r.URL.Query().Get("state")
 	errorParam := r.URL.Query().Get("error")
+	
+	// If account_id not in query, try state parameter (for external redirects)
+	if accountID == "" && state != "" {
+		accountID = state
+	}
 
 	if errorParam != "" {
 		errorDesc := r.URL.Query().Get("error_description")
@@ -466,11 +485,17 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Build redirect URI (must match the one used in authorization)
-	redirectURI := fmt.Sprintf("http://localhost:%s/api/tiktok/callback?account_id=%s", s.cfg.ServerPort, accountID)
+	// For exchange, we need the base redirect URI without query parameters
+	baseRedirectURI := s.cfg.TikTokRedirectURI
+	if baseRedirectURI == "" {
+		baseRedirectURI = fmt.Sprintf("http://localhost:%s/api/tiktok/callback", s.cfg.ServerPort)
+	}
+	// Remove query parameters for exchange (TikTok expects exact match)
+	redirectURIForExchange := strings.Split(baseRedirectURI, "?")[0]
 
 	// Exchange code for token
 	logger.Info().Printf("Exchanging code for token for account %s", accountID)
-	tokenResp, err := s.tiktokService.ExchangeCodeForToken(code, redirectURI)
+	tokenResp, err := s.tiktokService.ExchangeCodeForToken(code, redirectURIForExchange)
 	if err != nil {
 		logger.Error().Printf("Failed to exchange code for token: %v", err)
 		s.renderCallbackPage(w, false, fmt.Sprintf("Failed to exchange code: %v", err), accountID)

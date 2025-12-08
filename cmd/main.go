@@ -122,10 +122,12 @@ func bootstrapAccounts(cfg *config.Config, accountManager *usecase.AccountManage
 	}
 
 	for _, acc := range cfg.BootstrapAccounts {
-		if acc.YouTubeChannelID == "" || acc.TikTokAccountID == "" || acc.TikTokAccessToken == "" {
-			logger.Error().Printf("Skipping invalid bootstrap mapping (missing fields): %+v", acc)
+		// Validate required fields (token is optional - can be set via exchange-code API)
+		if acc.YouTubeChannelID == "" || acc.TikTokAccountID == "" {
+			logger.Error().Printf("Skipping invalid bootstrap mapping (missing YouTubeChannelID or TikTokAccountID): %+v", acc)
 			continue
 		}
+		// Token is optional - if missing, we'll use placeholder and user must update via exchange-code API
 
 		var existing *domain.Account
 		var err error
@@ -146,12 +148,20 @@ func bootstrapAccounts(cfg *config.Config, accountManager *usecase.AccountManage
 		}
 
 		if existing == nil {
-			account, err := accountManager.CreateAccountMapping(acc.YouTubeChannelID, acc.TikTokAccountID, acc.TikTokAccessToken)
+			// Create account even without token - token can be set later via exchange-code API
+			// But CreateAccountMapping requires a token, so we'll use a placeholder
+			token := acc.TikTokAccessToken
+			if token == "" {
+				// Use placeholder token - user must update via exchange-code API
+				token = "PLACEHOLDER_TOKEN_UPDATE_VIA_EXCHANGE_CODE_API"
+				logger.Info().Printf("Creating account for channel %s without token. Token must be set via exchange-code API.", acc.YouTubeChannelID)
+			}
+			account, err := accountManager.CreateAccountMapping(acc.YouTubeChannelID, acc.TikTokAccountID, token)
 			if err != nil {
 				logger.Error().Printf("Failed to bootstrap mapping for channel %s: %v", acc.YouTubeChannelID, err)
 				continue
 			}
-			logger.Info().Printf("Bootstrapped mapping %s -> %s", acc.YouTubeChannelID, acc.TikTokAccountID)
+			logger.Info().Printf("Bootstrapped mapping %s -> %s (Note: Token from config has no refresh token. Use exchange-code API to get refresh token.)", acc.YouTubeChannelID, acc.TikTokAccountID)
 			if acc.IsActive != nil && !*acc.IsActive {
 				if err := accountManager.DeactivateAccountMapping(account.ID); err != nil {
 					logger.Error().Printf("Failed to deactivate mapping for channel %s: %v", acc.YouTubeChannelID, err)
@@ -174,9 +184,27 @@ func bootstrapAccounts(cfg *config.Config, accountManager *usecase.AccountManage
 			tiktokID = acc.TikTokAccountID
 			needsUpdate = true
 		}
+		// Only update token from config if:
+		// 1. Account has no token in database, OR
+		// 2. Account has no refresh token (old token that can't be refreshed)
+		// This prevents overwriting tokens that were updated via API exchange code
 		if acc.TikTokAccessToken != "" && acc.TikTokAccessToken != existing.TikTokAccessToken {
-			token = acc.TikTokAccessToken
-			needsUpdate = true
+			if existing.TikTokAccessToken == "" {
+				// No token in database, use config token
+				token = acc.TikTokAccessToken
+				needsUpdate = true
+			} else if existing.TikTokRefreshToken == "" {
+				// Has token but no refresh token, update with config token
+				// (but this is still not ideal - better to use exchange code API)
+				logger.Info().Printf("Account %s has token but no refresh token. Consider using exchange-code API to get a refresh token instead of config token.", existing.ID)
+				// Don't update from config - let user use exchange-code API instead
+				// token = acc.TikTokAccessToken
+				// needsUpdate = true
+			} else {
+				// Account has token with refresh token - don't overwrite with config
+				// Token from database (obtained via API) takes precedence
+				logger.Info().Printf("Account %s already has token with refresh token. Skipping token update from config. Use exchange-code API if token needs updating.", existing.ID)
+			}
 		}
 		if acc.IsActive != nil && existing.IsActive != *acc.IsActive {
 			activePtr = acc.IsActive
