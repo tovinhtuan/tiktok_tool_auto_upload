@@ -2,6 +2,7 @@ package downloader
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -141,6 +142,13 @@ func (s *Service) DownloadVideo(ctx context.Context, opts DownloadOptions) (*Dow
 	if err := cmd.Run(); err != nil {
 		// Log stderr for debugging
 		stderrStr := stderr.String()
+		
+		// If bot detection error, try Invidious fallback
+		if strings.Contains(stderrStr, "Sign in to confirm") || strings.Contains(stderrStr, "bot") {
+			logger.Info().Printf("YouTube bot detection encountered, trying Invidious fallback...")
+			return s.downloadViaInvidious(ctx, opts.VideoID, outputPath)
+		}
+		
 		if stderrStr != "" {
 			return nil, fmt.Errorf("yt-dlp download failed: %w\nStderr: %s", err, stderrStr)
 		}
@@ -232,6 +240,108 @@ func (s *Service) DownloadVideoStream(ctx context.Context, videoURL string, outp
 	buffer := make([]byte, bufferSize)
 	_, err = io.CopyBuffer(file, resp.Body, buffer)
 	return err
+}
+
+// downloadViaInvidious downloads video using Invidious as fallback (no bot detection)
+func (s *Service) downloadViaInvidious(ctx context.Context, videoID string, outputPath string) (*DownloadResult, error) {
+	startTime := time.Now()
+	
+	// List of public Invidious instances
+	instances := []string{
+		"https://invidious.fdn.fr",
+		"https://invidious.privacydev.net",
+		"https://inv.tux.pizza",
+		"https://invidious.io.lol",
+		"https://yt.artemislena.eu",
+	}
+	
+	var lastErr error
+	for _, instance := range instances {
+		logger.Info().Printf("Trying Invidious instance: %s", instance)
+		
+		// Get video info from Invidious API
+		apiURL := fmt.Sprintf("%s/api/v1/videos/%s", instance, videoID)
+		req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		
+		if resp.StatusCode != 200 {
+			resp.Body.Close()
+			lastErr = fmt.Errorf("invidious API returned status %d", resp.StatusCode)
+			continue
+		}
+		
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		
+		// Parse JSON response
+		var data map[string]interface{}
+		if err := json.Unmarshal(body, &data); err != nil {
+			lastErr = err
+			continue
+		}
+		
+		// Get best video format URL
+		var downloadURL string
+		if formats, ok := data["adaptiveFormats"].([]interface{}); ok {
+			for _, f := range formats {
+				format := f.(map[string]interface{})
+				if url, ok := format["url"].(string); ok {
+					// Prefer mp4 video format
+					if typ, ok := format["type"].(string); ok {
+						if strings.Contains(typ, "video/mp4") {
+							downloadURL = url
+							break
+						}
+					}
+				}
+			}
+		}
+		
+		if downloadURL == "" {
+			lastErr = fmt.Errorf("no suitable format found")
+			continue
+		}
+		
+		// Download video
+		logger.Info().Printf("Downloading from Invidious: %s", downloadURL)
+		finalPath := strings.Replace(outputPath, "%(ext)s", "mp4", 1)
+		
+		if err := s.DownloadVideoStream(ctx, downloadURL, finalPath); err != nil {
+			lastErr = err
+			continue
+		}
+		
+		// Success!
+		fileInfo, err := os.Stat(finalPath)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		
+		duration := time.Since(startTime)
+		logger.Info().Printf("Successfully downloaded via Invidious: %s", finalPath)
+		
+		return &DownloadResult{
+			FilePath: finalPath,
+			FileSize: fileInfo.Size(),
+			Duration: duration,
+		}, nil
+	}
+	
+	return nil, fmt.Errorf("all Invidious instances failed, last error: %v", lastErr)
 }
 
 // CleanupOldDownloads removes old downloaded files
