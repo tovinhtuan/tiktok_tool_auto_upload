@@ -109,7 +109,7 @@ func (s *Service) DownloadVideo(ctx context.Context, opts DownloadOptions) (*Dow
 		logger.Info().Printf("Using YouTube cookies from: %s", cookiesPath)
 		args = append(args, "--cookies", cookiesPath)
 	} else {
-		logger.Warn().Printf("YouTube cookies not found at %s - may encounter bot detection", cookiesPath)
+		logger.Info().Printf("YouTube cookies not found at %s - may encounter bot detection", cookiesPath)
 	}
 
 	args = append(args, "-o", outputPath)

@@ -363,11 +363,12 @@ func (m *Manager) saveUnlocked(cfg *Config) error {
 			Schedule: cfg.CronSchedule,
 		},
 		Download: struct {
-			Dir           string `yaml:"dir"`
-			MaxConcurrent int    `yaml:"max_concurrent"`
-			Timeout       string `yaml:"timeout"`
-			BufferSize    int    `yaml:"buffer_size"`
-			YtDlpPath     string `yaml:"yt_dlp_path"`
+			Dir                string `yaml:"dir"`
+			MaxConcurrent      int    `yaml:"max_concurrent"`
+			Timeout            string `yaml:"timeout"`
+			BufferSize         int    `yaml:"buffer_size"`
+			YtDlpPath          string `yaml:"yt_dlp_path"`
+			YoutubeCookiesPath string `yaml:"youtube_cookies_path"`
 		}{
 			Dir:                cfg.DownloadDir,
 			MaxConcurrent:      cfg.MaxConcurrentDownloads,
