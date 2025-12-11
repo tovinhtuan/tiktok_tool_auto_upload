@@ -81,18 +81,23 @@ func (s *Service) DownloadVideo(ctx context.Context, opts DownloadOptions) (*Dow
 	logger.Info().Printf("Using yt-dlp at: %s", s.ytDlpPath)
 
 	// Build yt-dlp command with options to bypass YouTube bot detection
+	// Using tv_embedded client is currently the most reliable method
 	args := []string{
 		"--no-playlist",
 		"--no-warnings",
 		"--no-check-certificates",
-		// Add user-agent to mimic browser
+		// Use tv_embedded client - least likely to be blocked
+		"--extractor-args", "youtube:player_client=tv_embedded",
+		// Skip problematic formats
+		"--extractor-args", "youtube:skip=hls,dash",
+		// Add user-agent
 		"--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-		// Add referer
-		"--add-header", "Referer:https://www.youtube.com/",
-		// Use extractor args to bypass bot detection
-		"--extractor-args", "youtube:player_client=android,web",
+		// Prefer IPv4 (some servers have IPv6 issues)
+		"--force-ipv4",
 		// Retry on failures
 		"--retries", "3",
+		// Add delay between retries to avoid rate limiting
+		"--retry-sleep", "3",
 		"-o", outputPath,
 	}
 
