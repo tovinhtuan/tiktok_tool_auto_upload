@@ -1,0 +1,80 @@
+# Render Blueprint for Auto Upload TikTok
+# This file allows you to deploy this service directly on Render
+# https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: auto-upload-tiktok
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: starter  # or 'standard', 'pro', etc. based on your needs
+    region: oregon  # Change to your preferred region
+    envVars:
+      # Required: API Keys
+      - key: YOUTUBE_API_KEY
+        sync: false  # Set this in Render dashboard
+      - key: TIKTOK_API_KEY
+        sync: false
+      - key: TIKTOK_API_SECRET
+        sync: false
+      
+      # Optional: Server Configuration
+      - key: PORT
+        value: 8080  # Render will override this automatically
+      
+      # Optional: TikTok Configuration
+      - key: TIKTOK_REGION
+        value: JP
+      - key: TIKTOK_BASE_URL
+        value: https://open-api.tiktok.com
+      - key: TIKTOK_REDIRECT_URI
+        # Update this with your Render service URL after deployment
+        # Example: https://auto-upload-tiktok.onrender.com/api/tiktok/callback
+        sync: false
+      
+      # Optional: Cron Schedule (default: every 5 minutes)
+      - key: CRON_SCHEDULE
+        value: "*/5 * * * *"
+      
+      # Optional: Download Configuration
+      - key: DOWNLOAD_DIR
+        value: ./downloads
+      - key: DOWNLOAD_MAX_CONCURRENT
+        value: 5
+      - key: DOWNLOAD_TIMEOUT
+        value: 10m
+      
+      # Optional: Upload Configuration
+      - key: UPLOAD_MAX_CONCURRENT
+        value: 3
+      - key: UPLOAD_TIMEOUT
+        value: 15m
+      
+      # Optional: Database (uses SQLite by default)
+      - key: DATABASE_URL
+        value: sqlite3:./data.db
+      
+      # Optional: Performance Tuning
+      - key: WORKER_POOL_SIZE
+        value: 0  # 0 = auto-detect
+      - key: HTTP_CLIENT_TIMEOUT
+        value: 30s
+      - key: MAX_IDLE_CONNS
+        value: 200
+      - key: MAX_CONNS_PER_HOST
+        value: 50
+      
+      # Optional: Logging
+      - key: LOG_DIRECTORY
+        value: ./logs
+      - key: LOG_OUTPUT_FILE
+        value: app.log
+      - key: LOG_ERROR_FILE
+        value: app.error.log
+
+# Note: After deployment, make sure to:
+# 1. Set the required environment variables (YOUTUBE_API_KEY, TIKTOK_API_KEY, TIKTOK_API_SECRET)
+# 2. Update TIKTOK_REDIRECT_URI with your actual Render service URL
+# 3. For persistent storage, consider using Render Disk or external database service
+

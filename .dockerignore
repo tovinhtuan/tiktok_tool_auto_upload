@@ -1,0 +1,64 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+bin/
+cmd/bin/
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Dependency directories
+vendor/
+
+# Go workspace file
+go.work
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Project specific
+downloads/
+logs/
+*.db
+*.db-shm
+*.db-wal
+data.db
+cmd/data.db
+cmd/downloads/
+cmd/logs/
+
+# Config files (should be provided via environment or volume)
+config.yaml
+cmd/config.yaml
+
+# Git
+.git/
+.gitignore
+
+# Documentation
+README.md
+docs/
+
+# Scripts (not needed in container)
+scripts/
+*.ps1
+*.sh
+
+# Temporary files
+*.tmp
+*.log
+

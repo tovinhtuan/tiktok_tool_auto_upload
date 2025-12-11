@@ -82,7 +82,7 @@ func main() {
 		downloadService,
 		tiktokService,
 	)
-	
+
 	// Set video processor in account monitor for immediate processing
 	accountMonitor.SetVideoProcessor(videoProcessor)
 

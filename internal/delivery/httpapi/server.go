@@ -13,8 +13,8 @@ import (
 
 	"auto_upload_tiktok/config"
 	"auto_upload_tiktok/internal/domain"
-	"auto_upload_tiktok/internal/logger"
 	tiktok "auto_upload_tiktok/internal/infrastructure/tiktok"
+	"auto_upload_tiktok/internal/logger"
 	"auto_upload_tiktok/internal/usecase"
 )
 
@@ -57,7 +57,7 @@ func NewServer(cfg *config.Config, accountManager *usecase.AccountManager, video
 // Start begins serving HTTP requests in a separate goroutine.
 func (s *Server) Start() error {
 	if s.cfg.ServerPort == "" {
-		return fmt.Errorf("server port is not configured")
+		s.cfg.ServerPort = "8080"
 	}
 
 	go func() {
@@ -285,7 +285,7 @@ func (s *Server) handleExchangeCode(w http.ResponseWriter, r *http.Request) {
 	var payload struct {
 		Code         string `json:"code"`
 		RedirectURI  string `json:"redirect_uri"`
-		AccountID    string `json:"account_id"`    // Optional: if provided, update this account
+		AccountID    string `json:"account_id"`     // Optional: if provided, update this account
 		TikTokUserID string `json:"tiktok_user_id"` // Optional: if provided, find account by TikTok user ID
 	}
 
@@ -352,7 +352,7 @@ func (s *Server) handleExchangeCode(w http.ResponseWriter, r *http.Request) {
 	if refreshToken == "" {
 		logger.Info().Printf("WARNING: No refresh token received from TikTok API for account %s. Token will expire and need manual update.", account.ID)
 	}
-	
+
 	updated, err := s.accountManager.UpdateAccountTokens(
 		account.ID,
 		tokenResp.Data.AccessToken,
@@ -371,13 +371,13 @@ func (s *Server) handleExchangeCode(w http.ResponseWriter, r *http.Request) {
 	} else {
 		logger.Info().Printf("WARNING: No refresh token for account %s - token will need manual update when expired", account.ID)
 	}
-	
+
 	response := map[string]interface{}{
-		"status":      "success",
-		"account":     toAccountResponse(updated),
-		"expires_in":  tokenResp.Data.ExpiresIn,
-		"token_type":  tokenResp.Data.TokenType,
-		"scope":       tokenResp.Data.Scope,
+		"status":            "success",
+		"account":           toAccountResponse(updated),
+		"expires_in":        tokenResp.Data.ExpiresIn,
+		"token_type":        tokenResp.Data.TokenType,
+		"scope":             tokenResp.Data.Scope,
 		"has_refresh_token": refreshToken != "",
 	}
 	if refreshToken == "" {
@@ -425,7 +425,7 @@ func (s *Server) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 		// Store account_id in state parameter
 		redirectURI = fmt.Sprintf("%s?account_id=%s", redirectURI, accountID)
 	}
-	
+
 	authURL := fmt.Sprintf(
 		"https://www.tiktok.com/v2/auth/authorize/?client_key=%s&scope=user.info.basic,video.upload&response_type=code&redirect_uri=%s&state=%s",
 		s.cfg.TikTokAPIKey,
@@ -449,7 +449,7 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 	accountID := r.URL.Query().Get("account_id")
 	state := r.URL.Query().Get("state")
 	errorParam := r.URL.Query().Get("error")
-	
+
 	// If account_id not in query, try state parameter (for external redirects)
 	if accountID == "" && state != "" {
 		accountID = state
@@ -530,7 +530,7 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 // renderCallbackPage renders a simple HTML page to show the result
 func (s *Server) renderCallbackPage(w http.ResponseWriter, success bool, message string, accountID string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	
+
 	statusColor := "red"
 	statusIcon := "❌"
 	if success {
