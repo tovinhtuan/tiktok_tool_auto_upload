@@ -86,18 +86,19 @@ func (s *Service) DownloadVideo(ctx context.Context, opts DownloadOptions) (*Dow
 		"--no-playlist",
 		"--no-warnings",
 		"--no-check-certificates",
-		// Use tv_embedded client - least likely to be blocked
-		"--extractor-args", "youtube:player_client=tv_embedded",
-		// Skip problematic formats
+		// Multiple bypass techniques
+		"--extractor-args", "youtube:player_client=android,web",
 		"--extractor-args", "youtube:skip=hls,dash",
-		// Add user-agent
-		"--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-		// Prefer IPv4 (some servers have IPv6 issues)
+		// Spoof as Android device (less likely to be blocked)
+		"--user-agent", "com.google.android.youtube/19.09.37 (Linux; U; Android 11) gzip",
+		// Add more headers to look like real app
+		"--add-header", "X-YouTube-Client-Name:3",
+		"--add-header", "X-YouTube-Client-Version:19.09.37",
+		// Network options
 		"--force-ipv4",
-		// Retry on failures
-		"--retries", "3",
-		// Add delay between retries to avoid rate limiting
-		"--retry-sleep", "3",
+		"--retries", "5",
+		"--retry-sleep", "2",
+		"--fragment-retries", "5",
 	}
 
 	// Add cookies if available (helps bypass bot detection significantly)
@@ -115,14 +116,15 @@ func (s *Service) DownloadVideo(ctx context.Context, opts DownloadOptions) (*Dow
 
 	args = append(args, "-o", outputPath)
 
-	// Add format options
+	// Add format options optimized to avoid bot detection
 	if opts.Format != "" {
 		args = append(args, "-f", opts.Format)
 	} else if opts.Quality != "" {
 		args = append(args, "-f", fmt.Sprintf("bestvideo[height<=%s]+bestaudio/best[height<=%s]", opts.Quality, opts.Quality))
 	} else {
-		// Default: best quality mp4
-		args = append(args, "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]")
+		// Use format that bypasses bot detection better
+		// Format 18 = 360p mp4, widely available and less monitored
+		args = append(args, "-f", "18/best[height<=480]/best")
 	}
 
 	videoURL := fmt.Sprintf("https://www.youtube.com/watch?v=%s", opts.VideoID)
@@ -142,13 +144,13 @@ func (s *Service) DownloadVideo(ctx context.Context, opts DownloadOptions) (*Dow
 	if err := cmd.Run(); err != nil {
 		// Log stderr for debugging
 		stderrStr := stderr.String()
-		
+
 		// If bot detection error, try Invidious fallback
 		if strings.Contains(stderrStr, "Sign in to confirm") || strings.Contains(stderrStr, "bot") {
 			logger.Info().Printf("YouTube bot detection encountered, trying Invidious fallback...")
 			return s.downloadViaInvidious(ctx, opts.VideoID, outputPath)
 		}
-		
+
 		if stderrStr != "" {
 			return nil, fmt.Errorf("yt-dlp download failed: %w\nStderr: %s", err, stderrStr)
 		}
@@ -245,7 +247,7 @@ func (s *Service) DownloadVideoStream(ctx context.Context, videoURL string, outp
 // downloadViaInvidious downloads video using Invidious as fallback (no bot detection)
 func (s *Service) downloadViaInvidious(ctx context.Context, videoID string, outputPath string) (*DownloadResult, error) {
 	startTime := time.Now()
-	
+
 	// List of public Invidious instances
 	instances := []string{
 		"https://invidious.fdn.fr",
@@ -254,11 +256,11 @@ func (s *Service) downloadViaInvidious(ctx context.Context, videoID string, outp
 		"https://invidious.io.lol",
 		"https://yt.artemislena.eu",
 	}
-	
+
 	var lastErr error
 	for _, instance := range instances {
 		logger.Info().Printf("Trying Invidious instance: %s", instance)
-		
+
 		// Get video info from Invidious API
 		apiURL := fmt.Sprintf("%s/api/v1/videos/%s", instance, videoID)
 		req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
@@ -266,33 +268,33 @@ func (s *Service) downloadViaInvidious(ctx context.Context, videoID string, outp
 			lastErr = err
 			continue
 		}
-		
+
 		resp, err := s.httpClient.Do(req)
 		if err != nil {
 			lastErr = err
 			continue
 		}
-		
+
 		if resp.StatusCode != 200 {
 			resp.Body.Close()
 			lastErr = fmt.Errorf("invidious API returned status %d", resp.StatusCode)
 			continue
 		}
-		
+
 		body, err := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		if err != nil {
 			lastErr = err
 			continue
 		}
-		
+
 		// Parse JSON response
 		var data map[string]interface{}
 		if err := json.Unmarshal(body, &data); err != nil {
 			lastErr = err
 			continue
 		}
-		
+
 		// Get best video format URL
 		var downloadURL string
 		if formats, ok := data["adaptiveFormats"].([]interface{}); ok {
@@ -309,38 +311,38 @@ func (s *Service) downloadViaInvidious(ctx context.Context, videoID string, outp
 				}
 			}
 		}
-		
+
 		if downloadURL == "" {
 			lastErr = fmt.Errorf("no suitable format found")
 			continue
 		}
-		
+
 		// Download video
 		logger.Info().Printf("Downloading from Invidious: %s", downloadURL)
 		finalPath := strings.Replace(outputPath, "%(ext)s", "mp4", 1)
-		
+
 		if err := s.DownloadVideoStream(ctx, downloadURL, finalPath); err != nil {
 			lastErr = err
 			continue
 		}
-		
+
 		// Success!
 		fileInfo, err := os.Stat(finalPath)
 		if err != nil {
 			lastErr = err
 			continue
 		}
-		
+
 		duration := time.Since(startTime)
 		logger.Info().Printf("Successfully downloaded via Invidious: %s", finalPath)
-		
+
 		return &DownloadResult{
 			FilePath: finalPath,
 			FileSize: fileInfo.Size(),
 			Duration: duration,
 		}, nil
 	}
-	
+
 	return nil, fmt.Errorf("all Invidious instances failed, last error: %v", lastErr)
 }
 

@@ -32,8 +32,11 @@ RUN apk update && \
     py3-pip \
     ffmpeg \
     ca-certificates \
+    ca-certificates-bundle \
     tzdata \
-    wget && \
+    wget \
+    openssl && \
+    update-ca-certificates && \
     rm -rf /var/cache/apk/*
 
 # Install yt-dlp via pip (use --upgrade to get latest version)

@@ -26,27 +26,27 @@ var PublicInstances = []string{
 func GetVideoDownloadURL(videoID string) (string, error) {
 	for _, instance := range PublicInstances {
 		url := fmt.Sprintf("%s/api/v1/videos/%s", instance, videoID)
-		
+
 		resp, err := http.Get(url)
 		if err != nil {
 			continue // Try next instance
 		}
 		defer resp.Body.Close()
-		
+
 		if resp.StatusCode != 200 {
 			continue
 		}
-		
+
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
 			continue
 		}
-		
+
 		var data map[string]interface{}
 		if err := json.Unmarshal(body, &data); err != nil {
 			continue
 		}
-		
+
 		// Get adaptive formats
 		if formats, ok := data["adaptiveFormats"].([]interface{}); ok && len(formats) > 0 {
 			// Find best video format
@@ -61,7 +61,6 @@ func GetVideoDownloadURL(videoID string) (string, error) {
 			}
 		}
 	}
-	
+
 	return "", fmt.Errorf("failed to get download URL from all Invidious instances")
 }
-
