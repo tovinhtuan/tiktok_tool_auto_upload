@@ -59,6 +59,26 @@ logging:
   error_file: "${LOG_ERROR_FILE:-app.error.log}"
 EOF
 
+  # Add bootstrap accounts if environment variables are set
+  if [ -n "$BOOTSTRAP_ACCOUNTS" ]; then
+    echo "" >> config.yaml
+    echo "accounts:" >> config.yaml
+    echo "$BOOTSTRAP_ACCOUNTS" | tr ';' '\n' | while IFS=',' read -r youtube_id tiktok_id token active; do
+      if [ -n "$youtube_id" ] && [ -n "$tiktok_id" ]; then
+        echo "  - youtube_channel_id: \"${youtube_id}\"" >> config.yaml
+        echo "    tiktok_account_id: \"${tiktok_id}\"" >> config.yaml
+        if [ -n "$token" ]; then
+          echo "    tiktok_access_token: \"${token}\"" >> config.yaml
+        fi
+        if [ -n "$active" ]; then
+          echo "    is_active: ${active}" >> config.yaml
+        else
+          echo "    is_active: true" >> config.yaml
+        fi
+      fi
+    done
+  fi
+
   echo "Config file created at config.yaml"
 else
   echo "Using existing config.yaml"

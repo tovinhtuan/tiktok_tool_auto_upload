@@ -72,6 +72,11 @@ services:
         value: app.log
       - key: LOG_ERROR_FILE
         value: app.error.log
+      
+      # Optional: Bootstrap Accounts (format: youtube_id,tiktok_id,token,active separated by semicolon)
+      - key: BOOTSTRAP_ACCOUNTS
+        # Example: UCo9-zvcJyMhTEtgpSIk-L7g,7580560736729088017,,true
+        sync: false
 
 # Note: After deployment, make sure to:
 # 1. Set the required environment variables (YOUTUBE_API_KEY, TIKTOK_API_KEY, TIKTOK_API_SECRET)
