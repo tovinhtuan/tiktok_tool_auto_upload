@@ -3,8 +3,8 @@
 # Stage 1: Build stage
 FROM golang:1.24-alpine AS builder
 
-# Install build dependencies
-RUN apk add --no-cache git make
+# Install build dependencies including gcc for CGO
+RUN apk add --no-cache git make gcc musl-dev
 
 # Set working directory
 WORKDIR /app
