@@ -53,10 +53,10 @@ cmd/config.yaml
 README.md
 docs/
 
-# Scripts (not needed in container)
+# Scripts (not needed in container, but keep docker-entrypoint.sh)
 scripts/
 *.ps1
-*.sh
+# Note: docker-entrypoint.sh is needed and should be at root level
 
 # Temporary files
 *.tmp
