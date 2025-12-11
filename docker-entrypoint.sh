@@ -93,6 +93,17 @@ fi
 # Ensure required directories exist
 mkdir -p downloads logs
 
+# Decode YouTube cookies from base64 if provided
+if [ -n "$YOUTUBE_COOKIES_BASE64" ]; then
+  echo "Decoding YouTube cookies from environment variable..."
+  echo "$YOUTUBE_COOKIES_BASE64" | base64 -d > youtube_cookies.txt
+  if [ $? -eq 0 ]; then
+    echo "YouTube cookies decoded successfully"
+  else
+    echo "Warning: Failed to decode YouTube cookies"
+  fi
+fi
+
 # Execute the main application
 exec ./auto_upload_tiktok
 

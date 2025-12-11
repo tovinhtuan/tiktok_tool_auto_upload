@@ -36,6 +36,7 @@ type Config struct {
 	DownloadTimeout        time.Duration `yaml:"-"`
 	DownloadTimeoutStr     string        `yaml:"download.timeout"`
 	YtDlpPath              string        `yaml:"download.yt_dlp_path"`
+	YoutubeCookiesPath     string        `yaml:"download.youtube_cookies_path"`
 
 	// Upload configuration
 	MaxConcurrentUploads int           `yaml:"upload.max_concurrent"`
@@ -95,11 +96,12 @@ type configFile struct {
 		Schedule string `yaml:"schedule"`
 	} `yaml:"cron"`
 	Download struct {
-		Dir           string `yaml:"dir"`
-		MaxConcurrent int    `yaml:"max_concurrent"`
-		Timeout       string `yaml:"timeout"`
-		BufferSize    int    `yaml:"buffer_size"`
-		YtDlpPath     string `yaml:"yt_dlp_path"`
+		Dir                string `yaml:"dir"`
+		MaxConcurrent      int    `yaml:"max_concurrent"`
+		Timeout            string `yaml:"timeout"`
+		BufferSize         int    `yaml:"buffer_size"`
+		YtDlpPath          string `yaml:"yt_dlp_path"`
+		YoutubeCookiesPath string `yaml:"youtube_cookies_path"`
 	} `yaml:"download"`
 	Upload struct {
 		MaxConcurrent int    `yaml:"max_concurrent"`
@@ -183,6 +185,7 @@ func (m *Manager) Load() (*Config, error) {
 		MaxConcurrentDownloads: cfgFile.Download.MaxConcurrent,
 		DownloadTimeoutStr:     cfgFile.Download.Timeout,
 		YtDlpPath:              cfgFile.Download.YtDlpPath,
+		YoutubeCookiesPath:     cfgFile.Download.YoutubeCookiesPath,
 		MaxConcurrentUploads:   cfgFile.Upload.MaxConcurrent,
 		UploadTimeoutStr:       cfgFile.Upload.Timeout,
 		DatabaseURL:            cfgFile.Database.URL,
@@ -368,9 +371,10 @@ func (m *Manager) saveUnlocked(cfg *Config) error {
 		}{
 			Dir:           cfg.DownloadDir,
 			MaxConcurrent: cfg.MaxConcurrentDownloads,
-			Timeout:       cfg.DownloadTimeout.String(),
-			BufferSize:    cfg.DownloadBufferSize,
-			YtDlpPath:     cfg.YtDlpPath,
+			Timeout:            cfg.DownloadTimeout.String(),
+			BufferSize:         cfg.DownloadBufferSize,
+			YtDlpPath:          cfg.YtDlpPath,
+			YoutubeCookiesPath: cfg.YoutubeCookiesPath,
 		},
 		Upload: struct {
 			MaxConcurrent int    `yaml:"max_concurrent"`

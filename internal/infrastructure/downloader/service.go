@@ -81,7 +81,6 @@ func (s *Service) DownloadVideo(ctx context.Context, opts DownloadOptions) (*Dow
 	logger.Info().Printf("Using yt-dlp at: %s", s.ytDlpPath)
 
 	// Build yt-dlp command with options to bypass YouTube bot detection
-	// Using tv_embedded client is currently the most reliable method
 	args := []string{
 		"--no-playlist",
 		"--no-warnings",
@@ -98,8 +97,22 @@ func (s *Service) DownloadVideo(ctx context.Context, opts DownloadOptions) (*Dow
 		"--retries", "3",
 		// Add delay between retries to avoid rate limiting
 		"--retry-sleep", "3",
-		"-o", outputPath,
 	}
+
+	// Add cookies if available (helps bypass bot detection significantly)
+	cookiesPath := s.config.YoutubeCookiesPath
+	if cookiesPath == "" {
+		// Try default paths
+		cookiesPath = "./youtube_cookies.txt"
+	}
+	if _, err := os.Stat(cookiesPath); err == nil {
+		logger.Info().Printf("Using YouTube cookies from: %s", cookiesPath)
+		args = append(args, "--cookies", cookiesPath)
+	} else {
+		logger.Warn().Printf("YouTube cookies not found at %s - may encounter bot detection", cookiesPath)
+	}
+
+	args = append(args, "-o", outputPath)
 
 	// Add format options
 	if opts.Format != "" {
