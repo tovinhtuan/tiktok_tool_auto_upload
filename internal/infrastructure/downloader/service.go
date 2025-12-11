@@ -14,6 +14,7 @@ import (
 
 	"auto_upload_tiktok/config"
 	httpclient "auto_upload_tiktok/internal/infrastructure/http"
+	"auto_upload_tiktok/internal/logger"
 )
 
 // Service handles video downloading with high performance
@@ -76,13 +77,14 @@ func (s *Service) DownloadVideo(ctx context.Context, opts DownloadOptions) (*Dow
 	startTime := time.Now()
 	outputPath := filepath.Join(s.downloadDir, fmt.Sprintf("%s.%%(ext)s", opts.VideoID))
 
+	// Log yt-dlp path for debugging
+	logger.Info().Printf("Using yt-dlp at: %s", s.ytDlpPath)
+
 	// Build yt-dlp command
 	args := []string{
 		"--no-playlist",
 		"--no-warnings",
-		"--quiet",
-		"--progress",
-		"--newline",
+		"--no-check-certificates", // Skip SSL verification if needed
 		"-o", outputPath,
 	}
 
@@ -99,29 +101,23 @@ func (s *Service) DownloadVideo(ctx context.Context, opts DownloadOptions) (*Dow
 	videoURL := fmt.Sprintf("https://www.youtube.com/watch?v=%s", opts.VideoID)
 	args = append(args, videoURL)
 
+	// Log command for debugging
+	logger.Info().Printf("Executing: %s %s", s.ytDlpPath, strings.Join(args, " "))
+
 	// Execute yt-dlp
 	cmd := exec.CommandContext(ctx, s.ytDlpPath, args...)
 
-	// Capture output for progress tracking
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return nil, fmt.Errorf("failed to create stdout pipe: %w", err)
-	}
+	// Capture output for better error logging
+	var stdout, stderr strings.Builder
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
 
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		return nil, fmt.Errorf("failed to create stderr pipe: %w", err)
-	}
-
-	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("failed to start yt-dlp: %w", err)
-	}
-
-	// Monitor progress in a goroutine
-	go s.monitorProgress(stdout, stderr, opts.ProgressCallback)
-
-	// Wait for download to complete
-	if err := cmd.Wait(); err != nil {
+	if err := cmd.Run(); err != nil {
+		// Log stderr for debugging
+		stderrStr := stderr.String()
+		if stderrStr != "" {
+			return nil, fmt.Errorf("yt-dlp download failed: %w\nStderr: %s", err, stderrStr)
+		}
 		return nil, fmt.Errorf("yt-dlp download failed: %w", err)
 	}
 
