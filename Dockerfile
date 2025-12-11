@@ -21,20 +21,24 @@ COPY . .
 # Build the application
 RUN CGO_ENABLED=1 GOOS=linux go build -o /app/bin/auto_upload_tiktok ./cmd/main.go
 
-# Stage 2: Runtime stage
-FROM alpine:latest
+# Stage 2: Runtime stage  
+FROM alpine:3.19
+
+# Enable community repository explicitly
+RUN echo "@community http://dl-cdn.alpinelinux.org/alpine/v3.19/community" >> /etc/apk/repositories
 
 # Install runtime dependencies
-# yt-dlp requires Python, ffmpeg, wget (for healthcheck), and other dependencies
-RUN apk add --no-cache \
+# yt-dlp requires Python, ffmpeg (from community repo), wget, and other dependencies
+RUN apk update && apk add --no-cache \
     python3 \
     py3-pip \
-    ffmpeg \
+    ffmpeg@community \
     ca-certificates \
     tzdata \
     wget \
+    bash \
     && pip3 install --no-cache-dir yt-dlp \
-    && rm -rf /var/cache/apk/*
+    && rm -rf /var/cache/apk/* /root/.cache/pip/*
 
 # Create app directory
 WORKDIR /app
