@@ -20,6 +20,7 @@ download:
   max_concurrent: 5
   timeout: "10m"
   buffer_size: 1048576 # 1MB in bytes
+  yt_dlp_path: "" # Leave empty for auto-detection. Docker: uses /usr/bin/yt-dlp
 
 upload:
   max_concurrent: 3
