@@ -19,6 +19,8 @@ go.work
 
 # Configuration files (with sensitive data)
 config/config.yaml
+config.yaml
+cmd/config.yaml
 # Keep config.yaml.example for reference
 
 # Downloaded videos
