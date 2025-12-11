@@ -36,8 +36,8 @@ RUN apk update && \
     wget && \
     rm -rf /var/cache/apk/*
 
-# Install yt-dlp via pip
-RUN pip3 install --break-system-packages --no-cache-dir yt-dlp && \
+# Install yt-dlp via pip (use --upgrade to get latest version)
+RUN pip3 install --break-system-packages --no-cache-dir --upgrade yt-dlp && \
     rm -rf /root/.cache/pip/*
 
 # Create app directory
