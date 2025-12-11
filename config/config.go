@@ -369,8 +369,8 @@ func (m *Manager) saveUnlocked(cfg *Config) error {
 			BufferSize    int    `yaml:"buffer_size"`
 			YtDlpPath     string `yaml:"yt_dlp_path"`
 		}{
-			Dir:           cfg.DownloadDir,
-			MaxConcurrent: cfg.MaxConcurrentDownloads,
+			Dir:                cfg.DownloadDir,
+			MaxConcurrent:      cfg.MaxConcurrentDownloads,
 			Timeout:            cfg.DownloadTimeout.String(),
 			BufferSize:         cfg.DownloadBufferSize,
 			YtDlpPath:          cfg.YtDlpPath,
