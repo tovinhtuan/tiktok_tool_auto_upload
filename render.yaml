@@ -33,9 +33,9 @@ services:
         # Example: https://auto-upload-tiktok.onrender.com/api/tiktok/callback
         sync: false
       
-      # Optional: Cron Schedule (default: every 5 minutes)
+      # Optional: Cron Schedule (default: run every second)
       - key: CRON_SCHEDULE
-        value: "*/5 * * * *"
+        value: "* * * * * *"
       
       # Optional: Download Configuration
       - key: DOWNLOAD_DIR
@@ -82,4 +82,3 @@ services:
 # 1. Set the required environment variables (YOUTUBE_API_KEY, TIKTOK_API_KEY, TIKTOK_API_SECRET)
 # 2. Update TIKTOK_REDIRECT_URI with your actual Render service URL
 # 3. For persistent storage, consider using Render Disk or external database service
-

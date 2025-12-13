@@ -13,7 +13,7 @@ tiktok:
   region: "JP"   # TikTok region (JP for Japan)
 
 cron:
-  schedule: "*/5 * * * *" # Cron schedule for monitoring (every 5 minutes)
+  schedule: "* * * * * *" # Cron schedule for monitoring (runs every second)
 
 download:
   dir: "./downloads"
@@ -36,4 +36,3 @@ performance:
   max_idle_conns: 200
   max_conns_per_host: 50
   max_concurrent_io: 8     # Total concurrent I/O operations
-

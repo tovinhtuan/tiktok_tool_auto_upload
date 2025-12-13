@@ -237,7 +237,7 @@ func (m *Manager) Load() (*Config, error) {
 		}
 	}
 	if cfg.CronSchedule == "" {
-		cfg.CronSchedule = "*/5 * * * *"
+		cfg.CronSchedule = "* * * * * *"
 	}
 	if cfg.DownloadDir == "" {
 		cfg.DownloadDir = "./downloads"
@@ -562,7 +562,7 @@ func (m *Manager) createDefaultConfig() (*Config, error) {
 		TikTokBaseURL:          "https://open-api.tiktok.com",
 		TikTokUploadInitPath:   "/video/upload/",
 		TikTokPublishPath:      "/video/publish/",
-		CronSchedule:           "*/5 * * * *",
+		CronSchedule:           "* * * * * *",
 		DownloadDir:            "./downloads",
 		DatabaseURL:            "sqlite3:./data.db",
 		MaxConcurrentDownloads: 5,

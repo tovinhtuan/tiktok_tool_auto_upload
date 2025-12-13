@@ -12,7 +12,7 @@ tiktok:
   publish_path: "/v2/post/publish/status/fetch/"
   redirect_uri: "https://tovinhtuan.github.io/tiktok-policy/callback" # OAuth redirect URI (must match TikTok app settings)
 cron:
-    schedule: '*/5 * * * *'
+    schedule: '* * * * * *'
 download:
     dir: ./downloads
     max_concurrent: 5

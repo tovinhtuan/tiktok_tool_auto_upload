@@ -38,7 +38,7 @@ Hướng dẫn này giúp bạn deploy ứng dụng Auto Upload TikTok lên Rend
    **Tùy chọn:**
    - `PORT`: Port cho server (Render tự động set, không cần chỉnh)
    - `TIKTOK_REDIRECT_URI`: Callback URL cho OAuth (sau khi deploy, set thành `https://your-service.onrender.com/api/tiktok/callback`)
-   - `CRON_SCHEDULE`: Lịch chạy cron (mặc định: `*/5 * * * *`)
+   - `CRON_SCHEDULE`: Lịch chạy cron (mặc định: `* * * * * *` - quét YouTube mỗi giây)
    - Các biến khác xem trong `render.yaml`
 
 5. **Deploy:**
@@ -131,4 +131,3 @@ Hướng dẫn này giúp bạn deploy ứng dụng Auto Upload TikTok lên Rend
 ## Environment Variables Reference
 
 Xem file `render.yaml` để biết danh sách đầy đủ các environment variables có thể cấu hình.
-

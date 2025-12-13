@@ -29,7 +29,7 @@ tiktok:
   redirect_uri: "${TIKTOK_REDIRECT_URI:-}"
 
 cron:
-  schedule: "${CRON_SCHEDULE:-*/5 * * * *}"
+  schedule: "${CRON_SCHEDULE:-* * * * * *}"
 
 download:
   dir: "${DOWNLOAD_DIR:-./downloads}"
@@ -106,4 +106,3 @@ fi
 
 # Execute the main application
 exec ./auto_upload_tiktok
-

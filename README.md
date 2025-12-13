@@ -68,7 +68,7 @@ tiktok:
 
 # Cron Schedule
 cron:
-  schedule: "*/5 * * * *"  # Every 5 minutes
+  schedule: "* * * * * *"  # Scan YouTube once every second
 
 # Download Configuration
 download:
