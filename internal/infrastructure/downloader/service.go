@@ -78,6 +78,10 @@ func (s *Service) DownloadVideo(ctx context.Context, opts DownloadOptions) (*Dow
 	startTime := time.Now()
 	outputPath := filepath.Join(s.downloadDir, fmt.Sprintf("%s.%%(ext)s", opts.VideoID))
 
+	// Log download start
+	logger.Info().Printf("[DOWNLOAD START] Video ID: %s | Method: yt-dlp | Time: %s",
+		opts.VideoID, startTime.Format("2006-01-02 15:04:05"))
+
 	// Log yt-dlp path for debugging
 	logger.Info().Printf("Using yt-dlp at: %s", s.ytDlpPath)
 
@@ -86,33 +90,32 @@ func (s *Service) DownloadVideo(ctx context.Context, opts DownloadOptions) (*Dow
 		"--no-playlist",
 		"--no-warnings",
 		"--no-check-certificates",
-		// Multiple bypass techniques
-		"--extractor-args", "youtube:player_client=android,web",
+
+		// Performance optimization - concurrent downloads
+		"--concurrent-fragments", "8", // Download 8 fragments simultaneously
+		"--buffer-size", "16M", // 16MB buffer for better throughput
+		"--http-chunk-size", "10M", // 10MB per chunk
+
+		// Use android_creator client which is often less restricted
+		"--extractor-args", "youtube:player_client=android_creator,android,ios",
 		"--extractor-args", "youtube:skip=hls,dash",
-		// Spoof as Android device (less likely to be blocked)
-		"--user-agent", "com.google.android.youtube/19.09.37 (Linux; U; Android 11) gzip",
-		// Add more headers to look like real app
-		"--add-header", "X-YouTube-Client-Name:3",
-		"--add-header", "X-YouTube-Client-Version:19.09.37",
-		// Network options
-		"--force-ipv4",
+		// Network options - remove force-ipv4 as it might cause issues
 		"--retries", "5",
 		"--retry-sleep", "2",
 		"--fragment-retries", "5",
 	}
 
-	// Add cookies if available (helps bypass bot detection significantly)
-	cookiesPath := s.config.YoutubeCookiesPath
-	if cookiesPath == "" {
-		// Try default paths
-		cookiesPath = "./youtube_cookies.txt"
+	// Check if aria2c is available for even faster downloads (3-10x speed improvement)
+	if _, err := exec.LookPath("aria2c"); err == nil {
+		args = append(args,
+			"--external-downloader", "aria2c",
+			"--external-downloader-args", "-x 16 -s 16 -k 1M",
+		)
+		logger.Info().Printf("Using aria2c external downloader for faster downloads")
 	}
-	if _, err := os.Stat(cookiesPath); err == nil {
-		logger.Info().Printf("Using YouTube cookies from: %s", cookiesPath)
-		args = append(args, "--cookies", cookiesPath)
-	} else {
-		logger.Info().Printf("YouTube cookies not found at %s - may encounter bot detection", cookiesPath)
-	}
+
+	// Cookies usage removed as per user request
+	// ...
 
 	args = append(args, "-o", outputPath)
 
@@ -145,9 +148,20 @@ func (s *Service) DownloadVideo(ctx context.Context, opts DownloadOptions) (*Dow
 		// Log stderr for debugging
 		stderrStr := stderr.String()
 
-		// If bot detection error, try Invidious fallback
-		if strings.Contains(stderrStr, "Sign in to confirm") || strings.Contains(stderrStr, "bot") {
-			logger.Info().Printf("YouTube bot detection encountered, trying Invidious fallback...")
+		// If bot detection error, try Cobalt fallback first, then Invidious
+		if strings.Contains(stderrStr, "Sign in to confirm") ||
+			strings.Contains(stderrStr, "bot") ||
+			strings.Contains(stderrStr, "403: Forbidden") ||
+			strings.Contains(stderrStr, "429: Too Many Requests") {
+			logger.Info().Printf("YouTube bot detection encountered (error: %s), trying Cobalt fallback...", stderrStr)
+
+			// Try Cobalt first
+			if result, err := s.downloadViaCobalt(ctx, opts.VideoID, outputPath); err == nil {
+				return result, nil
+			} else {
+				logger.Error().Printf("Cobalt fallback failed: %v, trying Invidious...", err)
+			}
+
 			return s.downloadViaInvidious(ctx, opts.VideoID, outputPath)
 		}
 
@@ -180,6 +194,12 @@ func (s *Service) DownloadVideo(ctx context.Context, opts DownloadOptions) (*Dow
 	}
 
 	duration := time.Since(startTime)
+	fileSizeMB := float64(fileInfo.Size()) / (1024 * 1024)
+	speedMBps := fileSizeMB / duration.Seconds()
+
+	// Log download completion with detailed metrics
+	logger.Info().Printf("[DOWNLOAD COMPLETE] Video ID: %s | Method: yt-dlp | Duration: %.2fs | Size: %d bytes (%.2f MB) | Speed: %.2f MB/s | File: %s",
+		opts.VideoID, duration.Seconds(), fileInfo.Size(), fileSizeMB, speedMBps, filepath.Base(filePath))
 
 	return &DownloadResult{
 		FilePath: filePath,
@@ -217,6 +237,10 @@ func (s *Service) DownloadVideoStream(ctx context.Context, videoURL string, outp
 		return err
 	}
 
+	// Add headers to mimic a browser to avoid 403 on direct links
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+	req.Header.Set("Referer", "https://www.youtube.com/")
+
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
 		return err
@@ -235,7 +259,7 @@ func (s *Service) DownloadVideoStream(ctx context.Context, videoURL string, outp
 
 	// Stream download with optimized buffer size for I/O bound operations
 	// Larger buffer reduces system calls and improves throughput
-	bufferSize := 1024 * 1024 // 1MB default, configurable via config
+	bufferSize := 4 * 1024 * 1024 // 4MB default (increased from 1MB), configurable via config
 	if s.config != nil && s.config.DownloadBufferSize > 0 {
 		bufferSize = s.config.DownloadBufferSize
 	}
@@ -244,9 +268,104 @@ func (s *Service) DownloadVideoStream(ctx context.Context, videoURL string, outp
 	return err
 }
 
+// downloadViaCobalt downloads video using Cobalt.tools API
+func (s *Service) downloadViaCobalt(ctx context.Context, videoID string, outputPath string) (*DownloadResult, error) {
+	startTime := time.Now()
+	logger.Info().Printf("[DOWNLOAD START] Video ID: %s | Method: Cobalt | Time: %s",
+		videoID, startTime.Format("2006-01-02 15:04:05"))
+	logger.Info().Printf("Attempting download via Cobalt for video %s", videoID)
+
+	// Cobalt API endpoint
+	apiURL := "https://api.cobalt.tools/api/json"
+	videoURL := fmt.Sprintf("https://www.youtube.com/watch?v=%s", videoID)
+
+	// Prepare request body
+	requestBody, err := json.Marshal(map[string]string{
+		"url":             videoURL,
+		"vCodec":          "h264",
+		"vQuality":        "720",
+		"aFormat":         "mp3",
+		"filenamePattern": "basic",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal cobalt request: %w", err)
+	}
+
+	// Create request
+	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, strings.NewReader(string(requestBody)))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create cobalt request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+
+	// Execute request
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("cobalt api request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("cobalt api returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	// Parse response
+	var result struct {
+		URL    string `json:"url"`
+		Status string `json:"status"`
+		Text   string `json:"text"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode cobalt response: %w", err)
+	}
+
+	if result.Status == "error" {
+		return nil, fmt.Errorf("cobalt api error: %s", result.Text)
+	}
+
+	if result.URL == "" {
+		return nil, fmt.Errorf("cobalt api returned empty url")
+	}
+
+	// Download the file from the returned URL
+	logger.Info().Printf("Downloading from Cobalt URL: %s", result.URL)
+	finalPath := strings.Replace(outputPath, "%(ext)s", "mp4", 1)
+
+	if err := s.DownloadVideoStream(ctx, result.URL, finalPath); err != nil {
+		return nil, fmt.Errorf("failed to download from cobalt url: %w", err)
+	}
+
+	// Success!
+	fileInfo, err := os.Stat(finalPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to stat downloaded file: %w", err)
+	}
+
+	duration := time.Since(startTime)
+	fileSizeMB := float64(fileInfo.Size()) / (1024 * 1024)
+	speedMBps := fileSizeMB / duration.Seconds()
+
+	// Log download completion with detailed metrics
+	logger.Info().Printf("[DOWNLOAD COMPLETE] Video ID: %s | Method: Cobalt | Duration: %.2fs | Size: %d bytes (%.2f MB) | Speed: %.2f MB/s | File: %s",
+		videoID, duration.Seconds(), fileInfo.Size(), fileSizeMB, speedMBps, filepath.Base(finalPath))
+	logger.Info().Printf("Successfully downloaded via Cobalt: %s", finalPath)
+
+	return &DownloadResult{
+		FilePath: finalPath,
+		FileSize: fileInfo.Size(),
+		Duration: duration,
+	}, nil
+}
+
 // downloadViaInvidious downloads video using Invidious as fallback (no bot detection)
 func (s *Service) downloadViaInvidious(ctx context.Context, videoID string, outputPath string) (*DownloadResult, error) {
 	startTime := time.Now()
+	logger.Info().Printf("[DOWNLOAD START] Video ID: %s | Method: Invidious | Time: %s",
+		videoID, startTime.Format("2006-01-02 15:04:05"))
 
 	// List of public Invidious instances
 	instances := []string{
@@ -255,6 +374,9 @@ func (s *Service) downloadViaInvidious(ctx context.Context, videoID string, outp
 		"https://inv.tux.pizza",
 		"https://invidious.io.lol",
 		"https://yt.artemislena.eu",
+		"https://invidious.drgns.space",
+		"https://invidious.lunar.icu",
+		"https://invidious.projectsegfau.lt",
 	}
 
 	var lastErr error
@@ -334,6 +456,12 @@ func (s *Service) downloadViaInvidious(ctx context.Context, videoID string, outp
 		}
 
 		duration := time.Since(startTime)
+		fileSizeMB := float64(fileInfo.Size()) / (1024 * 1024)
+		speedMBps := fileSizeMB / duration.Seconds()
+
+		// Log download completion with detailed metrics
+		logger.Info().Printf("[DOWNLOAD COMPLETE] Video ID: %s | Method: Invidious | Duration: %.2fs | Size: %d bytes (%.2f MB) | Speed: %.2f MB/s | File: %s",
+			videoID, duration.Seconds(), fileInfo.Size(), fileSizeMB, speedMBps, filepath.Base(finalPath))
 		logger.Info().Printf("Successfully downloaded via Invidious: %s", finalPath)
 
 		return &DownloadResult{

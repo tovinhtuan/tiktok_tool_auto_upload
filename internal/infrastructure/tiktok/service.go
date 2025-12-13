@@ -2,6 +2,7 @@ package tiktok
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -24,6 +25,9 @@ type Service struct {
 	baseURL        string
 	uploadInitPath string
 	publishPath    string
+	enableWeb      bool
+	cookiesPath    string
+	webUploader    *WebUploader
 }
 
 // NewService creates a new TikTok service
@@ -36,6 +40,9 @@ func NewService(cfg *config.Config, httpClient *httpclient.HTTPClient) *Service 
 		baseURL:        cfg.TikTokBaseURL,
 		uploadInitPath: cfg.TikTokUploadInitPath,
 		publishPath:    cfg.TikTokPublishPath,
+		enableWeb:      cfg.TikTokEnableWeb,
+		cookiesPath:    cfg.TikTokCookiesPath,
+		webUploader:    NewWebUploader(cfg.TikTokCookiesPath, true), // Default to headless
 	}
 }
 
@@ -89,6 +96,14 @@ func (s *Service) UploadVideo(req *UploadRequest) (string, error) {
 	fileInfo, err := os.Stat(req.VideoPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to stat video file: %w", err)
+	}
+
+	// Check if web upload is enabled
+	if s.enableWeb {
+		if s.webUploader == nil {
+			return "", fmt.Errorf("web uploader is not initialized")
+		}
+		return s.webUploader.UploadVideo(context.Background(), req)
 	}
 
 	// Step 1: Initialize upload
@@ -401,10 +416,10 @@ func (s *Service) RefreshAccessToken(refreshToken string) (*TokenResponse, error
 	apiURL := fmt.Sprintf("%s/v2/oauth/token/", s.baseURL)
 
 	payload := map[string]string{
-		"client_key":     s.apiKey,
-		"client_secret":  s.apiSecret,
+		"client_key":    s.apiKey,
+		"client_secret": s.apiSecret,
 		"grant_type":    "refresh_token",
-		"refresh_token":  refreshToken,
+		"refresh_token": refreshToken,
 	}
 
 	httpReq, err := s.newJSONRequest(http.MethodPost, apiURL, payload, "")

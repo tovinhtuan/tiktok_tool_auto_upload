@@ -17,19 +17,19 @@ type HTTPClient struct {
 // NewHTTPClient creates a new optimized HTTP client for I/O bound operations
 func NewHTTPClient(cfg *config.Config) *HTTPClient {
 	transport := &http.Transport{
-		MaxIdleConns:        cfg.MaxIdleConns,
-		MaxIdleConnsPerHost: cfg.MaxConnsPerHost,
-		MaxConnsPerHost:     cfg.MaxConnsPerHost, // Allow more concurrent connections per host
-		IdleConnTimeout:     90 * time.Second,
+		MaxIdleConns:          cfg.MaxIdleConns,
+		MaxIdleConnsPerHost:   cfg.MaxConnsPerHost,
+		MaxConnsPerHost:       cfg.MaxConnsPerHost, // Allow more concurrent connections per host
+		IdleConnTimeout:       90 * time.Second,
 		ResponseHeaderTimeout: 30 * time.Second, // Timeout for reading response headers
-		ExpectContinueTimeout:  1 * time.Second,  // Timeout for 100-continue
+		ExpectContinueTimeout: 1 * time.Second,  // Timeout for 100-continue
 		TLSClientConfig: &tls.Config{
 			InsecureSkipVerify: false,
 		},
 		DisableKeepAlives: false,
-		ForceAttemptHTTP2: true, // HTTP/2 for better multiplexing
-		WriteBufferSize:   64 * 1024, // 64KB write buffer
-		ReadBufferSize:    64 * 1024, // 64KB read buffer
+		ForceAttemptHTTP2: true,       // HTTP/2 for better multiplexing
+		WriteBufferSize:   256 * 1024, // 256KB write buffer (increased from 64KB)
+		ReadBufferSize:    256 * 1024, // 256KB read buffer (increased from 64KB)
 	}
 
 	client := &http.Client{
@@ -61,4 +61,3 @@ func (c *HTTPClient) Do(req *http.Request) (*http.Response, error) {
 func (c *HTTPClient) GetClient() *http.Client {
 	return c.client
 }
-

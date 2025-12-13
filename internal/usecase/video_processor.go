@@ -204,54 +204,60 @@ func (p *VideoProcessor) uploadVideo(ctx context.Context, video *domain.Video) e
 	if account.TikTokAccountID == "" {
 		return fmt.Errorf("TikTok account ID not configured for account %s", account.ID)
 	}
-	if account.TikTokAccessToken == "" {
-		authorizeURL := p.promptManualAuthorization(account.ID)
-		return fmt.Errorf("TikTok access token not configured for account %s. Re-authorize via %s and exchange the returned code for a token", account.ID, authorizeURL)
-	}
 
-	// Validate and refresh access token if needed
-	logger.Info().Printf("Validating TikTok access token for account %s", account.ID)
-	isValid, err := p.tiktokService.VerifyAccessToken(account.TikTokAccessToken)
-	if err != nil {
-		logger.Error().Printf("Failed to verify access token for account %s: %v", account.ID, err)
-		return fmt.Errorf("failed to verify access token: %w", err)
-	}
-	if !isValid {
-		logger.Info().Printf("Access token is invalid or expired for account %s, attempting to refresh", account.ID)
-
-		// Try to refresh token if refresh token is available
-		if account.TikTokRefreshToken != "" {
-			logger.Info().Printf("Attempting to refresh access token for account %s", account.ID)
-			tokenResp, err := p.tiktokService.RefreshAccessToken(account.TikTokRefreshToken)
-			if err != nil {
-				logger.Error().Printf("Failed to refresh access token for account %s: %v", account.ID, err)
-				return fmt.Errorf("TikTok access token is invalid and refresh failed for account %s: %w. Please update the token", account.ID, err)
-			}
-
-			// Update account with new tokens
-			account.TikTokAccessToken = tokenResp.Data.AccessToken
-			if tokenResp.Data.RefreshToken != "" {
-				account.TikTokRefreshToken = tokenResp.Data.RefreshToken
-			}
-			if tokenResp.Data.ExpiresIn > 0 {
-				expiresAt := time.Now().Add(time.Duration(tokenResp.Data.ExpiresIn) * time.Second)
-				account.TikTokTokenExpiresAt = &expiresAt
-			}
-
-			// Save updated account
-			if err := p.accountRepo.Save(account); err != nil {
-				logger.Error().Printf("Failed to save refreshed token for account %s: %v", account.ID, err)
-				return fmt.Errorf("failed to save refreshed token: %w", err)
-			}
-
-			logger.Info().Printf("Successfully refreshed access token for account %s", account.ID)
-		} else {
-			logger.Error().Printf("Access token is invalid or expired for account %s and no refresh token available", account.ID)
+	// If Web Upload is enabled, we skip API token validation
+	if !p.config.TikTokEnableWeb {
+		if account.TikTokAccessToken == "" {
 			authorizeURL := p.promptManualAuthorization(account.ID)
-			return fmt.Errorf("TikTok access token is invalid or expired for account %s and no refresh token available. Re-authorize via %s and exchange the returned code for a new token", account.ID, authorizeURL)
+			return fmt.Errorf("TikTok access token not configured for account %s. Re-authorize via %s and exchange the returned code for a token", account.ID, authorizeURL)
 		}
+
+		// Validate and refresh access token if needed
+		logger.Info().Printf("Validating TikTok access token for account %s", account.ID)
+		isValid, err := p.tiktokService.VerifyAccessToken(account.TikTokAccessToken)
+		if err != nil {
+			logger.Error().Printf("Failed to verify access token for account %s: %v", account.ID, err)
+			return fmt.Errorf("failed to verify access token: %w", err)
+		}
+		if !isValid {
+			logger.Info().Printf("Access token is invalid or expired for account %s, attempting to refresh", account.ID)
+
+			// Try to refresh token if refresh token is available
+			if account.TikTokRefreshToken != "" {
+				logger.Info().Printf("Attempting to refresh access token for account %s", account.ID)
+				tokenResp, err := p.tiktokService.RefreshAccessToken(account.TikTokRefreshToken)
+				if err != nil {
+					logger.Error().Printf("Failed to refresh access token for account %s: %v", account.ID, err)
+					return fmt.Errorf("TikTok access token is invalid and refresh failed for account %s: %w. Please update the token", account.ID, err)
+				}
+
+				// Update account with new tokens
+				account.TikTokAccessToken = tokenResp.Data.AccessToken
+				if tokenResp.Data.RefreshToken != "" {
+					account.TikTokRefreshToken = tokenResp.Data.RefreshToken
+				}
+				if tokenResp.Data.ExpiresIn > 0 {
+					expiresAt := time.Now().Add(time.Duration(tokenResp.Data.ExpiresIn) * time.Second)
+					account.TikTokTokenExpiresAt = &expiresAt
+				}
+
+				// Save updated account
+				if err := p.accountRepo.Save(account); err != nil {
+					logger.Error().Printf("Failed to save refreshed token for account %s: %v", account.ID, err)
+					return fmt.Errorf("failed to save refreshed token: %w", err)
+				}
+
+				logger.Info().Printf("Successfully refreshed access token for account %s", account.ID)
+			} else {
+				logger.Error().Printf("Access token is invalid or expired for account %s and no refresh token available", account.ID)
+				authorizeURL := p.promptManualAuthorization(account.ID)
+				return fmt.Errorf("TikTok access token is invalid or expired for account %s and no refresh token available. Re-authorize via %s and exchange the returned code for a new token", account.ID, authorizeURL)
+			}
+		}
+		logger.Info().Printf("Access token validated successfully for account %s", account.ID)
+	} else {
+		logger.Info().Printf("Web upload enabled, skipping API token validation for account %s", account.ID)
 	}
-	logger.Info().Printf("Access token validated successfully for account %s", account.ID)
 
 	// Update status to uploading
 	if err := p.videoRepo.UpdateStatus(video.ID, domain.VideoStatusUploading, ""); err != nil {

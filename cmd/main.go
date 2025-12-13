@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"log"
 	"os"
 	"os/signal"
@@ -22,6 +23,10 @@ import (
 )
 
 func main() {
+	// Parse command line flags
+	loginMode := flag.Bool("login", false, "Run in interactive login mode to save TikTok cookies")
+	flag.Parse()
+
 	// Load configuration from YAML file
 	cfg, err := config.Load()
 	if err != nil {
@@ -36,6 +41,12 @@ func main() {
 			log.Printf("Failed to close log files: %v", err)
 		}
 	}()
+
+	// Handle login mode
+	if *loginMode {
+		handleLoginMode(cfg)
+		return
+	}
 
 	// Validate required configuration
 	if cfg.YouTubeAPIKey == "" {
@@ -219,4 +230,22 @@ func bootstrapAccounts(cfg *config.Config, accountManager *usecase.AccountManage
 			}
 		}
 	}
+}
+
+func handleLoginMode(cfg *config.Config) {
+	logger.Info().Println("Starting interactive login mode...")
+
+	if cfg.TikTokCookiesPath == "" {
+		logger.Error().Fatal("tiktok.cookies_path is not set in config.yaml")
+	}
+
+	// Create web uploader in non-headless mode
+	uploader := tiktok.NewWebUploader(cfg.TikTokCookiesPath, false)
+
+	ctx := context.Background()
+	if err := uploader.LoginAndSaveCookies(ctx); err != nil {
+		logger.Error().Fatalf("Login failed: %v", err)
+	}
+
+	logger.Info().Println("Login successful! Cookies saved. You can now run the tool normally.")
 }

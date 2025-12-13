@@ -26,6 +26,8 @@ type Config struct {
 	TikTokUploadInitPath string `yaml:"tiktok.upload_init_path"`
 	TikTokPublishPath    string `yaml:"tiktok.publish_path"`
 	TikTokRedirectURI    string `yaml:"tiktok.redirect_uri"` // OAuth redirect URI
+	TikTokEnableWeb      bool   `yaml:"tiktok.enable_web"`   // Enable web upload via browser automation
+	TikTokCookiesPath    string `yaml:"tiktok.cookies_path"` // Path to cookies file for web upload
 
 	// Cron schedule configuration
 	CronSchedule string `yaml:"cron.schedule"`
@@ -91,6 +93,8 @@ type configFile struct {
 		UploadInitPath string `yaml:"upload_init_path"`
 		PublishPath    string `yaml:"publish_path"`
 		RedirectURI    string `yaml:"redirect_uri"`
+		EnableWeb      bool   `yaml:"enable_web"`
+		CookiesPath    string `yaml:"cookies_path"`
 	} `yaml:"tiktok"`
 	Cron struct {
 		Schedule string `yaml:"schedule"`
@@ -180,6 +184,8 @@ func (m *Manager) Load() (*Config, error) {
 		TikTokUploadInitPath:   cfgFile.TikTok.UploadInitPath,
 		TikTokPublishPath:      cfgFile.TikTok.PublishPath,
 		TikTokRedirectURI:      cfgFile.TikTok.RedirectURI,
+		TikTokEnableWeb:        cfgFile.TikTok.EnableWeb,
+		TikTokCookiesPath:      cfgFile.TikTok.CookiesPath,
 		CronSchedule:           cfgFile.Cron.Schedule,
 		DownloadDir:            cfgFile.Download.Dir,
 		MaxConcurrentDownloads: cfgFile.Download.MaxConcurrent,
@@ -299,13 +305,13 @@ func (m *Manager) Load() (*Config, error) {
 
 	// Set defaults for performance settings
 	if cfg.MaxIdleConns == 0 {
-		cfg.MaxIdleConns = 200
+		cfg.MaxIdleConns = 300 // Increased from 200 for better connection pooling
 	}
 	if cfg.MaxConnsPerHost == 0 {
-		cfg.MaxConnsPerHost = 50
+		cfg.MaxConnsPerHost = 100 // Increased from 50 for more concurrent connections
 	}
 	if cfg.DownloadBufferSize == 0 {
-		cfg.DownloadBufferSize = 1024 * 1024 // 1MB
+		cfg.DownloadBufferSize = 4 * 1024 * 1024 // 4MB (increased from 1MB)
 	}
 	if cfg.UploadBufferSize == 0 {
 		cfg.UploadBufferSize = 1024 * 1024 // 1MB
@@ -348,6 +354,8 @@ func (m *Manager) saveUnlocked(cfg *Config) error {
 			UploadInitPath string `yaml:"upload_init_path"`
 			PublishPath    string `yaml:"publish_path"`
 			RedirectURI    string `yaml:"redirect_uri"`
+			EnableWeb      bool   `yaml:"enable_web"`
+			CookiesPath    string `yaml:"cookies_path"`
 		}{
 			APIKey:         cfg.TikTokAPIKey,
 			APISecret:      cfg.TikTokAPISecret,
@@ -356,6 +364,8 @@ func (m *Manager) saveUnlocked(cfg *Config) error {
 			UploadInitPath: cfg.TikTokUploadInitPath,
 			PublishPath:    cfg.TikTokPublishPath,
 			RedirectURI:    cfg.TikTokRedirectURI,
+			EnableWeb:      cfg.TikTokEnableWeb,
+			CookiesPath:    cfg.TikTokCookiesPath,
 		},
 		Cron: struct {
 			Schedule string `yaml:"schedule"`
@@ -487,6 +497,12 @@ func (m *Manager) Update(updates map[string]interface{}) error {
 			m.config.TikTokUploadInitPath = value.(string)
 		case "tiktok.publish_path":
 			m.config.TikTokPublishPath = value.(string)
+		case "tiktok.enable_web":
+			if v, ok := value.(bool); ok {
+				m.config.TikTokEnableWeb = v
+			}
+		case "tiktok.cookies_path":
+			m.config.TikTokCookiesPath = value.(string)
 		case "cron.schedule":
 			m.config.CronSchedule = value.(string)
 		case "download.dir":
@@ -569,10 +585,10 @@ func (m *Manager) createDefaultConfig() (*Config, error) {
 		MaxConcurrentUploads:   3,
 		DownloadTimeout:        10 * time.Minute,
 		UploadTimeout:          15 * time.Minute,
-		HTTPClientTimeout:      30 * time.Second,
-		MaxIdleConns:           200,
-		MaxConnsPerHost:        50,
-		DownloadBufferSize:     1024 * 1024,
+		HTTPClientTimeout:      60 * time.Second, // Increased from 30s
+		MaxIdleConns:           300,              // Increased from 200
+		MaxConnsPerHost:        100,              // Increased from 50
+		DownloadBufferSize:     4 * 1024 * 1024,  // 4MB instead of 1MB
 		UploadBufferSize:       1024 * 1024,
 		LogDirectory:           "./logs",
 		LogOutputFile:          "app.log",
@@ -604,7 +620,12 @@ var globalManager *Manager
 // Load loads configuration from YAML file (backward compatibility)
 func Load() (*Config, error) {
 	if globalManager == nil {
-		globalManager = NewManager("config.yaml")
+		configPath := "config.yaml"
+		// Check if config/config.yaml exists, if so use it as default
+		if _, err := os.Stat("config/config.yaml"); err == nil {
+			configPath = "config/config.yaml"
+		}
+		globalManager = NewManager(configPath)
 	}
 	return globalManager.Load()
 }
@@ -612,7 +633,12 @@ func Load() (*Config, error) {
 // GetManager returns the global config manager
 func GetManager() *Manager {
 	if globalManager == nil {
-		globalManager = NewManager("config.yaml")
+		configPath := "config.yaml"
+		// Check if config/config.yaml exists, if so use it as default
+		if _, err := os.Stat("config/config.yaml"); err == nil {
+			configPath = "config/config.yaml"
+		}
+		globalManager = NewManager(configPath)
 	}
 	return globalManager
 }
