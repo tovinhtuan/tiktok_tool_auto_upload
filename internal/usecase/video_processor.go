@@ -2,8 +2,12 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
+	"os"
+	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 
@@ -153,10 +157,6 @@ func (p *VideoProcessor) downloadVideo(ctx context.Context, video *domain.Video)
 	p.downloadSem <- struct{}{}
 	defer func() { <-p.downloadSem }()
 
-	// Create context with timeout
-	downloadCtx, cancel := context.WithTimeout(ctx, p.config.DownloadTimeout)
-	defer cancel()
-
 	// Download video with optimized settings for I/O bound operation
 	opts := downloader.DownloadOptions{
 		VideoID: video.YouTubeVideoID,
@@ -167,10 +167,55 @@ func (p *VideoProcessor) downloadVideo(ctx context.Context, video *domain.Video)
 		},
 	}
 
-	result, err := p.downloadService.DownloadVideo(downloadCtx, opts)
-	if err != nil {
-		logger.Error().Printf("Download failed for video %s: %v", video.YouTubeVideoID, err)
-		return fmt.Errorf("download failed: %w", err)
+	const maxRetries = 3
+	retryDelay := 2 * time.Second
+	deadline := time.Now().Add(p.config.DownloadTimeout)
+
+	var (
+		result  *downloader.DownloadResult
+		lastErr error
+	)
+
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			lastErr = context.DeadlineExceeded
+			break
+		}
+
+		attemptCtx, cancel := context.WithTimeout(ctx, remaining)
+		logger.Info().Printf("Attempt %d/%d downloading video %s", attempt, maxRetries, video.YouTubeVideoID)
+
+		result, lastErr = p.downloadService.DownloadVideo(attemptCtx, opts)
+		cancel()
+
+		if lastErr == nil {
+			break
+		}
+
+		logger.Error().Printf("Download attempt %d failed for video %s: %v", attempt, video.YouTubeVideoID, lastErr)
+
+		// Do not retry if context was cancelled or deadline exceeded.
+		if errors.Is(lastErr, context.Canceled) || errors.Is(lastErr, context.DeadlineExceeded) {
+			break
+		}
+
+		if attempt < maxRetries {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(retryDelay):
+			}
+			retryDelay *= 2
+		}
+	}
+
+	if lastErr != nil {
+		return fmt.Errorf("download failed after %d attempts: %w", maxRetries, lastErr)
 	}
 
 	// Update video with file path
@@ -184,6 +229,10 @@ func (p *VideoProcessor) downloadVideo(ctx context.Context, video *domain.Video)
 		return err
 	}
 	logger.Info().Printf("Download completed for video %s -> %s", video.YouTubeVideoID, result.FilePath)
+
+	// Enforce retention policy for downloads directory.
+	go p.cleanupDownloadDirectory(result.FilePath)
+
 	return nil
 }
 
@@ -314,4 +363,60 @@ func (p *VideoProcessor) promptManualAuthorization(accountID string) string {
 	logger.Error().Printf("Call https://open.tiktokapis.com/v2/oauth/token/ (or POST /api/tiktok/exchange-code) with client_key, client_secret, redirect_uri=%s and code=NEW_CODE to store the new access/refresh tokens", p.config.TikTokRedirectURI)
 
 	return authorizeURL
+}
+
+// cleanupDownloadDirectory keeps only the two newest files in the download directory and removes the rest.
+func (p *VideoProcessor) cleanupDownloadDirectory(latestFile string) {
+	const retentionCount = 2
+
+	dir := p.config.DownloadDir
+	if dir == "" && latestFile != "" {
+		dir = filepath.Dir(latestFile)
+	}
+	if dir == "" {
+		return
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		logger.Error().Printf("Failed to read downloads directory %s: %v", dir, err)
+		return
+	}
+
+	type fileMeta struct {
+		path    string
+		modTime time.Time
+	}
+
+	files := make([]fileMeta, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			logger.Error().Printf("Failed to stat %s: %v", entry.Name(), err)
+			continue
+		}
+		files = append(files, fileMeta{
+			path:    filepath.Join(dir, entry.Name()),
+			modTime: info.ModTime(),
+		})
+	}
+
+	if len(files) <= retentionCount {
+		return
+	}
+
+	sort.Slice(files, func(i, j int) bool {
+		return files[i].modTime.After(files[j].modTime)
+	})
+
+	for _, file := range files[retentionCount:] {
+		if err := os.Remove(file.path); err != nil {
+			logger.Error().Printf("Failed to remove old download %s: %v", file.path, err)
+			continue
+		}
+		logger.Info().Printf("Removed old download %s to enforce retention policy", file.path)
+	}
 }

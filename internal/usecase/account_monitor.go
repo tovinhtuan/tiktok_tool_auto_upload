@@ -15,11 +15,13 @@ import (
 
 // AccountMonitor monitors YouTube accounts for new videos
 type AccountMonitor struct {
-	config         *config.Config
-	accountRepo    domain.AccountRepository
-	videoRepo      domain.VideoRepository
-	youtubeService *youtube.Service
-	videoProcessor *VideoProcessor // Optional: for immediate processing
+	config            *config.Config
+	accountRepo       domain.AccountRepository
+	videoRepo         domain.VideoRepository
+	youtubeService    *youtube.Service
+	videoProcessor    *VideoProcessor // Optional: for immediate processing
+	processingLimiter chan struct{}   // Controls concurrent immediate processing to avoid resource spikes
+	baseCtx           context.Context // Root context for background processing
 }
 
 // NewAccountMonitor creates a new account monitor
@@ -29,17 +31,32 @@ func NewAccountMonitor(
 	videoRepo domain.VideoRepository,
 	youtubeService *youtube.Service,
 ) *AccountMonitor {
+	limiterSize := cfg.WorkerPoolSize
+	if limiterSize <= 0 {
+		limiterSize = 1
+	}
+
 	return &AccountMonitor{
-		config:         cfg,
-		accountRepo:    accountRepo,
-		videoRepo:      videoRepo,
-		youtubeService: youtubeService,
+		config:            cfg,
+		accountRepo:       accountRepo,
+		videoRepo:         videoRepo,
+		youtubeService:    youtubeService,
+		processingLimiter: make(chan struct{}, limiterSize),
+		baseCtx:           context.Background(),
 	}
 }
 
 // SetVideoProcessor sets the video processor for immediate processing of new videos
 func (m *AccountMonitor) SetVideoProcessor(processor *VideoProcessor) {
 	m.videoProcessor = processor
+}
+
+// SetBaseContext configures the root context used for long-running background processing.
+func (m *AccountMonitor) SetBaseContext(ctx context.Context) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	m.baseCtx = ctx
 }
 
 // MonitorAllAccounts monitors all active accounts for new videos
@@ -89,18 +106,19 @@ func (m *AccountMonitor) monitorAccount(ctx context.Context, account *domain.Acc
 	// Log which job is running (YouTube channel -> TikTok account mapping)
 	// This helps track which job is processing which pair
 
-	// Determine the time to check from (last check or last video published time)
-	publishedAfter := account.LastCheckedAt
-	if publishedAfter.IsZero() {
-		// If never checked, check videos from last 24 hours
-		publishedAfter = time.Now().Add(-24 * time.Hour)
+	// Determine the time window for logging and bootstrap filtering.
+	scanSince := account.LastCheckedAt
+	var bootstrapCutoff time.Time
+	if scanSince.IsZero() {
+		// If never checked, only consider the last 24 hours to avoid importing the entire backlog.
+		bootstrapCutoff = time.Now().Add(-24 * time.Hour)
+		scanSince = bootstrapCutoff
 	}
 
 	// Fetch latest videos from YouTube channel
 	videos, err := m.youtubeService.GetLatestVideos(
 		account.YouTubeChannelID,
 		50, // Max results
-		publishedAfter,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to get latest videos for YouTube channel %s (TikTok account %s): %w",
@@ -121,6 +139,11 @@ func (m *AccountMonitor) monitorAccount(ctx context.Context, account *domain.Acc
 		}
 
 		if existing == nil {
+			if !bootstrapCutoff.IsZero() && video.PublishedAt.Before(bootstrapCutoff) {
+				// Skip older content during the initial bootstrap window.
+				continue
+			}
+
 			// New video found
 			video.AccountID = account.ID
 			newVideos = append(newVideos, video)
@@ -129,7 +152,7 @@ func (m *AccountMonitor) monitorAccount(ctx context.Context, account *domain.Acc
 
 	if len(newVideos) == 0 {
 		logger.Info().Printf("No new videos detected for YouTube channel %s (TikTok account %s) since %s",
-			account.YouTubeChannelID, account.TikTokAccountID, publishedAfter.Format(time.RFC3339))
+			account.YouTubeChannelID, account.TikTokAccountID, scanSince.Format(time.RFC3339))
 	} else {
 		logger.Info().Printf("Discovered %d new videos for YouTube channel %s (TikTok account %s); newest video ID: %s",
 			len(newVideos), account.YouTubeChannelID, account.TikTokAccountID, newVideos[0].YouTubeVideoID)
@@ -168,27 +191,73 @@ func (m *AccountMonitor) monitorAccount(ctx context.Context, account *domain.Acc
 	if len(persistedVideos) > 0 {
 		logger.Info().Printf("Persisted %d new videos for YouTube channel %s (TikTok account %s)",
 			len(persistedVideos), account.YouTubeChannelID, account.TikTokAccountID)
-		
+
 		// Process new videos immediately instead of waiting for schedule
 		if m.videoProcessor != nil {
 			logger.Info().Printf("Starting immediate processing for %d new videos from channel %s",
 				len(persistedVideos), account.YouTubeChannelID)
-			
+
 			// Process videos in background goroutines to avoid blocking monitoring
 			for _, video := range persistedVideos {
-				go func(v *domain.Video) {
-					processCtx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
-					defer cancel()
-					
-					if err := m.videoProcessor.ProcessVideo(processCtx, v); err != nil {
-						logger.Error().Printf("Failed to process video %s immediately: %v", v.YouTubeVideoID, err)
-					} else {
-						logger.Info().Printf("Successfully processed video %s immediately after discovery", v.YouTubeVideoID)
-					}
-				}(video)
+				m.launchImmediateProcessing(video)
 			}
 		}
 	}
 
 	return nil
+}
+
+// launchImmediateProcessing starts asynchronous processing with concurrency safeguards to avoid leaks/spikes.
+func (m *AccountMonitor) launchImmediateProcessing(video *domain.Video) {
+	if m.videoProcessor == nil {
+		return
+	}
+
+	baseCtx := m.baseCtx
+	if baseCtx == nil {
+		baseCtx = context.Background()
+	}
+
+	go func(v *domain.Video) {
+		if !m.acquireProcessingSlot(baseCtx) {
+			logger.Error().Printf("Skipping immediate processing for video %s: context cancelled before slot available", v.YouTubeVideoID)
+			return
+		}
+		defer m.releaseProcessingSlot()
+
+		processCtx, cancel := context.WithTimeout(baseCtx, 30*time.Minute)
+		defer cancel()
+
+		if err := m.videoProcessor.ProcessVideo(processCtx, v); err != nil {
+			logger.Error().Printf("Failed to process video %s immediately: %v", v.YouTubeVideoID, err)
+		} else {
+			logger.Info().Printf("Successfully processed video %s immediately after discovery", v.YouTubeVideoID)
+		}
+	}(video)
+}
+
+func (m *AccountMonitor) acquireProcessingSlot(ctx context.Context) bool {
+	limiter := m.processingLimiter
+	if limiter == nil {
+		return true
+	}
+
+	select {
+	case limiter <- struct{}{}:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
+func (m *AccountMonitor) releaseProcessingSlot() {
+	limiter := m.processingLimiter
+	if limiter == nil {
+		return
+	}
+
+	select {
+	case <-limiter:
+	default:
+	}
 }

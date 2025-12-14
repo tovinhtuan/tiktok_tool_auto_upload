@@ -32,6 +32,10 @@ func NewScheduler(
 	// Create context for graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
 
+	if accountMonitor != nil {
+		accountMonitor.SetBaseContext(ctx)
+	}
+
 	// Create cron with seconds support
 	c := cron.New(cron.WithSeconds())
 

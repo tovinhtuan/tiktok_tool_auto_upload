@@ -64,3 +64,4 @@ func GetVideoDownloadURL(videoID string) (string, error) {
 
 	return "", fmt.Errorf("failed to get download URL from all Invidious instances")
 }
+

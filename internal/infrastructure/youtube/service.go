@@ -49,7 +49,7 @@ type SearchResponse struct {
 }
 
 // GetLatestVideos fetches the latest videos from a YouTube channel
-func (s *Service) GetLatestVideos(channelID string, maxResults int, publishedAfter time.Time) ([]*domain.Video, error) {
+func (s *Service) GetLatestVideos(channelID string, maxResults int) ([]*domain.Video, error) {
 	// First, get the uploads playlist ID
 	playlistID, err := s.getUploadsPlaylistID(channelID)
 	if err != nil {
@@ -57,7 +57,7 @@ func (s *Service) GetLatestVideos(channelID string, maxResults int, publishedAft
 	}
 
 	// Get videos from the uploads playlist
-	videos, err := s.getPlaylistVideos(playlistID, maxResults, publishedAfter)
+	videos, err := s.getPlaylistVideos(playlistID, maxResults)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get playlist videos: %w", err)
 	}
@@ -106,7 +106,7 @@ func (s *Service) getUploadsPlaylistID(channelID string) (string, error) {
 }
 
 // getPlaylistVideos retrieves videos from a playlist
-func (s *Service) getPlaylistVideos(playlistID string, maxResults int, publishedAfter time.Time) ([]*domain.Video, error) {
+func (s *Service) getPlaylistVideos(playlistID string, maxResults int) ([]*domain.Video, error) {
 	apiURL := fmt.Sprintf("%s/playlistItems", s.baseURL)
 	params := url.Values{}
 	params.Set("part", "snippet,contentDetails")
@@ -150,21 +150,16 @@ func (s *Service) getPlaylistVideos(playlistID string, maxResults int, published
 
 	videos := make([]*domain.Video, 0, len(result.Items))
 	for _, item := range result.Items {
-		// Filter by published date
-		if item.Snippet.PublishedAt.Before(publishedAfter) {
-			continue
-		}
-
 		video := &domain.Video{
-			ID:           item.ContentDetails.VideoID,
+			ID:             item.ContentDetails.VideoID,
 			YouTubeVideoID: item.ContentDetails.VideoID,
-			Title:        item.Snippet.Title,
-			Description:  item.Snippet.Description,
-			ThumbnailURL: item.Snippet.Thumbnails.Default.URL,
-			Status:       domain.VideoStatusPending,
-			PublishedAt:  item.Snippet.PublishedAt,
-			CreatedAt:    time.Now(),
-			UpdatedAt:    time.Now(),
+			Title:          item.Snippet.Title,
+			Description:    item.Snippet.Description,
+			ThumbnailURL:   item.Snippet.Thumbnails.Default.URL,
+			Status:         domain.VideoStatusPending,
+			PublishedAt:    item.Snippet.PublishedAt,
+			CreatedAt:      time.Now(),
+			UpdatedAt:      time.Now(),
 		}
 		videos = append(videos, video)
 	}
@@ -177,7 +172,7 @@ func (s *Service) DownloadVideo(videoID string, outputPath string) error {
 	// In a real implementation, you would use youtube-dl or yt-dlp
 	// For this example, we'll use a simplified approach
 	// Note: This requires youtube-dl or yt-dlp to be installed on the system
-	
+
 	// For production, you should use yt-dlp library or exec command
 	// This is a placeholder that shows the structure
 	return fmt.Errorf("download implementation required - use yt-dlp or similar tool")
@@ -196,4 +191,3 @@ func (s *Service) DownloadVideoStream(videoID string, outputPath string, progres
 	// Placeholder for actual implementation
 	return fmt.Errorf("streaming download implementation required")
 }
-
